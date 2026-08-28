@@ -14,15 +14,17 @@
   canvas{display:block}
 
   /* рамка-видоискатель */
-  #frame{position:fixed;inset:14px;border:1px solid rgba(20,18,15,.28);pointer-events:none;z-index:5}
-  #frame::before,#frame::after{content:'';position:absolute;width:14px;height:14px;border:2px solid var(--ink)}
+  #frame{position:fixed;inset:14px;border:1px solid rgba(20,18,15,.28);pointer-events:none;z-index:5;
+    transition:border-color 1.2s}
+  #frame::before,#frame::after{content:'';position:absolute;width:14px;height:14px;border:2px solid var(--ink);
+    transition:border-color 1.2s}
   #frame::before{top:-2px;left:-2px;border-right:none;border-bottom:none}
   #frame::after{bottom:-2px;right:-2px;border-left:none;border-top:none}
 
   /* прицел */
   #crosshair{position:fixed;left:50%;top:50%;width:0;height:0;z-index:6;pointer-events:none;opacity:0;transition:opacity .2s}
   body.playing #crosshair{opacity:1}
-  #crosshair span{position:absolute;background:var(--ink)}
+  #crosshair span{position:absolute;background:var(--ink);transition:background 1.2s}
   #crosshair .c1{width:2px;height:7px;left:-1px;top:-13px}
   #crosshair .c2{width:2px;height:7px;left:-1px;top:6px}
   #crosshair .c3{width:7px;height:2px;left:-13px;top:-1px}
@@ -39,16 +41,17 @@
 
   /* HUD */
   #hud{position:fixed;inset:0;pointer-events:none;z-index:6;color:var(--ink);
-    text-transform:uppercase;letter-spacing:.14em;font-size:13px;opacity:0;transition:opacity .3s}
+    text-transform:uppercase;letter-spacing:.14em;font-size:13px;opacity:0;transition:opacity .3s,color 1.2s}
   body.playing #hud{opacity:1}
   #hud-tl{position:absolute;top:34px;left:38px;line-height:1.9}
   #hud-tl b{font-weight:700}
   .dim{opacity:.55}
+  #ui-instab{display:none;color:var(--red)}
   #hud-bl{position:absolute;bottom:34px;left:38px}
   #hp-num{font-family:'Unbounded';font-weight:900;font-size:44px;line-height:1;letter-spacing:.02em}
   #hp-num.low{color:var(--red)}
-  #hp-bar{width:180px;height:4px;background:rgba(20,18,15,.18);margin-top:8px}
-  #hp-fill{height:100%;background:var(--ink);width:100%}
+  #hp-bar{width:180px;height:4px;background:rgba(20,18,15,.18);margin-top:8px;transition:background 1.2s}
+  #hp-fill{height:100%;background:var(--ink);width:100%;transition:background 1.2s}
   #hp-fill.low{background:var(--red)}
   #hud-br{position:absolute;bottom:34px;right:38px;text-align:right}
   #wpn-name{font-size:12px;letter-spacing:.28em;margin-bottom:4px}
@@ -59,7 +62,16 @@
     animation:blink .5s steps(2) infinite}
   @keyframes blink{to{opacity:.15}}
   #hint{position:absolute;bottom:110px;left:50%;transform:translateX(-50%);
-    font-size:12px;letter-spacing:.3em;opacity:.6;transition:opacity 1.2s}
+    font-size:12px;letter-spacing:.3em;opacity:.6;transition:opacity 1.2s;text-align:center}
+
+  /* ночная тема HUD — мир темнеет, интерфейр светлеет */
+  body.night #hud{color:#e8e2d4}
+  body.night #hp-fill{background:#e8e2d4}
+  body.night #hp-bar{background:rgba(232,226,212,.16)}
+  body.night #frame{border-color:rgba(232,226,212,.22)}
+  body.night #frame::before,body.night #frame::after{border-color:#e8e2d4}
+  body.night #crosshair span{background:#e8e2d4}
+  body.night #ui-instab{color:#ff4a38}
 
   /* оверлеи */
   #overlay{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
@@ -78,7 +90,6 @@
   #overlay .quote{margin-top:26px;font-size:12px;letter-spacing:.18em;opacity:.55;text-transform:lowercase}
   #overlay .stat{margin-top:22px;font-size:14px;letter-spacing:.2em;line-height:2}
   #overlay .stat b{color:var(--red)}
-  #lvl-frag{color:var(--red)}
 </style>
 </head>
 <body>
@@ -92,6 +103,7 @@
     <div>глубина <b id="ui-depth">01</b></div>
     <div>счёт <b id="ui-score">0</b></div>
     <div class="dim">уничтожено <b id="ui-kills">0</b></div>
+    <div id="ui-instab"></div>
   </div>
   <div id="hud-bl">
     <div id="hp-num">100</div>
@@ -112,6 +124,9 @@
 'use strict';
 /* ============================================================
    БЕССОННИЦА — сюрреалистичный FPS в одном файле
+   глубины 1–7: небо темнеет до полной ночи
+   глубина 10: стены начинают дышать
+   глубина 11+: лабиринт перестраивает сам себя
    ============================================================ */
 
 // ---------- константы ----------
@@ -120,13 +135,17 @@ const WALL_H = 5;        // высота стен
 const EYE = 1.7, PLAYER_R = 0.55;
 const WALK = 8.2, RUN = 12.4, JUMP = 7, GRAV = 22;
 const RED = 0xe02414, INK = 0x14120f, PAPER = 0xe8e2d4;
+const SINK_DEPTH = WALL_H + 0.6;       // насколько стена уходит под пол
+const SOLID_Y = -(WALL_H - 0.45);      // ниже этого уровня клетка проходима
+const DIRS4 = [[1,0],[-1,0],[0,1],[0,-1]];
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd = (a,b)=>a+Math.random()*(b-a);
 const rndi = (a,b)=>Math.floor(rnd(a,b+1));
+const easeInOut = t=>t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
 
 // ---------- звук: чистый WebAudio, всё синтезируется ----------
-let AC=null, master=null, noiseBuf=null, droneNodes=null;
+let AC=null, master=null, noiseBuf=null;
 function initAudio(){
   if(AC){ AC.resume(); return; }
   AC = new (window.AudioContext||window.webkitAudioContext)();
@@ -185,6 +204,8 @@ const SFX = {
   pickup(){ sTone(0.18,0.25,620,1240,'sine'); sTone(0.18,0.12,930,1860,'sine',0.02); },
   portal(){ sTone(0.7,0.3,240,960,'sine'); sTone(0.7,0.15,360,1440,'sine',0.1); },
   dry(){ sNoise(0.05,0.2,1400,'bandpass',6); },
+  rumble(v){ v=v||1; sNoise(1.1,0.22*v,140,'lowpass',0.6); sTone(0.9,0.15*v,55,26,'sine'); },
+  thud(v){ v=v||1; sNoise(0.22,0.5*v,210,'lowpass',0.8); sTone(0.18,0.42*v,75,30,'sine'); },
 };
 function chargeSound(on,e){
   if(!AC) return;
@@ -216,18 +237,39 @@ const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.05, 600
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 
-scene.add(new THREE.HemisphereLight(0xfff6e6, 0x8f887a, 0.95));
+const hemiLight = new THREE.HemisphereLight(0xfff6e6, 0x8f887a, 0.95);
+scene.add(hemiLight);
 const sunLight = new THREE.DirectionalLight(0xfff2dd, 0.5);
 sunLight.position.set(-40, 60, -90);
 scene.add(sunLight);
 
-// чёрное солнце — бесконечно удалённый объект
+// фонарь игрока — загорается с наступлением ночи
+const playerLight = new THREE.PointLight(0xffd9a8, 0, 15, 1);
+playerLight.position.set(0, -0.1, 0);
+camera.add(playerLight);
+let playerLightBase = 0;
+
+// чёрное солнце — бесконечно удалённый объект; ночью становится красным затмением
 const SUNDIR = new THREE.Vector3(-0.32,0.42,-0.85).normalize();
-const blackSun = new THREE.Mesh(
+const sunGroup = new THREE.Group();
+const sunDisc = new THREE.Mesh(
   new THREE.CircleGeometry(30,48),
   new THREE.MeshBasicMaterial({color:0x0c0a08, fog:false})
 );
-scene.add(blackSun);
+const sunHalo = new THREE.Mesh(
+  new THREE.RingGeometry(31,36,64),
+  new THREE.MeshBasicMaterial({color:RED, transparent:true, opacity:0, fog:false,
+    side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false})
+);
+sunHalo.position.z = 0.5;
+const sunGlow = new THREE.Mesh(
+  new THREE.CircleGeometry(58,48),
+  new THREE.MeshBasicMaterial({color:0x51100a, transparent:true, opacity:0, fog:false,
+    blending:THREE.AdditiveBlending, depthWrite:false})
+);
+sunGlow.position.z = -2;
+sunGroup.add(sunDisc, sunHalo, sunGlow);
+scene.add(sunGroup);
 
 // процедурные текстуры
 function makeCheckerTex(){
@@ -261,6 +303,32 @@ const checkerTex = makeCheckerTex(), wallTex = makeWallTex();
 const wallGeo = new THREE.BoxGeometry(CS,WALL_H,CS);
 const wallMat = new THREE.MeshLambertMaterial({map:wallTex});
 const floorMat = new THREE.MeshLambertMaterial({map:checkerTex});
+// общие ресурсы — их нельзя уничтожать при смене уровня
+const SHARED_RES = new Set([wallGeo, wallMat, floorMat, checkerTex, wallTex]);
+
+// ---------- атмосфера: небо темнеет с глубиной ----------
+let NIGHT = 0; // 0 — день, 1 — полная ночь (достигается на глубине 7)
+function applyAtmosphere(d){
+  NIGHT = clamp((d-1)/6, 0, 1);
+  const sky = new THREE.Color(0xded7c6).lerp(new THREE.Color(0x05060d), NIGHT);
+  scene.background = sky;
+  scene.fog.color.copy(sky);
+  scene.fog.near = 18 - 8*NIGHT;
+  scene.fog.far  = 82 - 26*NIGHT;
+  hemiLight.intensity = 0.95 - 0.62*NIGHT;
+  hemiLight.color.set(new THREE.Color(0xfff6e6).lerp(new THREE.Color(0x2e3d63), NIGHT));
+  hemiLight.groundColor.set(new THREE.Color(0x8f887a).lerp(new THREE.Color(0x10131d), NIGHT));
+  sunLight.intensity = 0.5 - 0.44*NIGHT;
+  sunLight.color.set(new THREE.Color(0xfff2dd).lerp(new THREE.Color(0xaebadd), NIGHT));
+  wallMat.color.setScalar(1 - 0.45*NIGHT);
+  // солнце превращается в красное затмение
+  sunHalo.material.opacity = 0.85*NIGHT;
+  sunGlow.material.opacity = 0.4*NIGHT;
+  playerLightBase = NIGHT*1.25;
+  document.body.classList.toggle('night', NIGHT >= 0.5);
+  document.getElementById('vignette').style.background =
+    `radial-gradient(ellipse at center, transparent ${62-18*NIGHT}%, rgba(8,7,10,${0.42+0.25*NIGHT}) 100%)`;
+}
 
 // ---------- состояние игры ----------
 let state='menu';           // menu | playing | paused | dead | transition
@@ -269,6 +337,9 @@ let locked=false;
 let maze=null, levelGroup=null, wallMesh=null, exitPos=new THREE.Vector3();
 let depth=1, score=0, kills=0, bestDepth=1;
 let gameT=0;
+let starfield=null;
+let wallAnim=[];
+let lastInstab='';
 
 const player = { pos:new THREE.Vector3(), vel:new THREE.Vector3(),
   hp:100, onGround:true, yaw:0, pitch:0, lastHurt:-99, bob:0, stepAcc:0 };
@@ -322,6 +393,26 @@ const QUOTES = [
   '«не считай повороты. они считают тебя.»',
   '«свет сквозь стены — единственная честная вещь здесь.»',
 ];
+const NIGHT_QUOTES = [
+  '«небо темнеет. тебе не кажется.»',
+  '«свет уходит не из лабиринта. из тебя.»',
+  '«чёрное солнце опускается? или это ты падаешь?»',
+  '«ночь стабильна. это худшая часть.»',
+];
+const CHAOS_QUOTES = [
+  '«лабиринт проснулся. стены двигаются.»',
+  '«стены никогда не были на месте. ты просто раньше не смотрел.»',
+  '«геометрия пересматривает свои решения.»',
+  '«не доверяй стенам. они не доверяют тебе.»',
+  '«лабиринт перестраивается. как и ты.»',
+];
+function depthFlavor(d){
+  if(d>=11) return CHAOS_QUOTES[rndi(0,CHAOS_QUOTES.length-1)];
+  if(d===10) return '«десятая глубина. стены за спиной начали дышать.»';
+  if(d===7) return '«наступила ночь. солнце всё ещё там — просто оно чёрное.»';
+  if(d>=2) return NIGHT_QUOTES[rndi(0,NIGHT_QUOTES.length-1)];
+  return QUOTES[rndi(0,QUOTES.length-1)];
+}
 
 function showIntro(){
   overlayShow(`
@@ -333,7 +424,9 @@ function showIntro(){
       <b>1 / 2 / 3 / колесо</b> револьвер · двухстволка · ракетница<br>
       <b>SHIFT / SPACE</b> бег / прыжок
     </div>
-    <div class="quote">геометрия не любит тебя. красная геометрия — особенно.<br>белый столб света ведёт глубже. гильзы бесконечны — сон тоже.</div>
+    <div class="quote">геометрия не любит тебя. красная геометрия — особенно.<br>
+    небо темнеет с каждой глубиной · после седьмой — ночь<br>
+    после десятой просыпаются стены</div>
     <div class="go">[ щёлкни, чтобы уснуть ]</div>`);
 }
 function showPause(){
@@ -347,14 +440,14 @@ function showDeath(){
     <h1>ПРОБУЖДЕНИЕ<br><em>ОТМЕНЕНО</em></h1>
     <div class="stat">глубина <b>${String(depth).padStart(2,'0')}</b> · счёт <b>${score}</b> · уничтожено <b>${kills}</b><br>
     лучшая глубина за сессию <b>${String(bestDepth).padStart(2,'0')}</b></div>
-    <div class="quote">${QUOTES[rndi(0,QUOTES.length-1)]}</div>
+    <div class="quote">${depthFlavor(depth)}</div>
     <div class="go">[ щёлкни, чтобы уснуть снова ]</div>`);
   document.body.classList.remove('playing');
 }
 function showTransition(){
   overlayShow(`
-    <h1 style="font-size:44px">ГЛУБЖЕ <em>${String(depth+1).padStart(2,'0')}</em></h1>
-    <div class="quote">${QUOTES[rndi(0,QUOTES.length-1)]}</div>`);
+    <h1 style="font-size:44px">ГЛУБЖЕ <em>${String(depth).padStart(2,'0')}</em></h1>
+    <div class="quote">${depthFlavor(depth)}</div>`);
   document.getElementById('overlay').classList.remove('hidden');
   setTimeout(()=>{ if(state==='transition') document.getElementById('overlay').classList.add('hidden'); },1300);
 }
@@ -465,13 +558,45 @@ const enemies=[], rockets=[], pickups=[], particles=[];
 const particleGroup=new THREE.Group(); scene.add(particleGroup);
 const eGroup=new THREE.Group(); scene.add(eGroup);
 
+function disposeLevel(){
+  if(!levelGroup) return;
+  levelGroup.traverse(o=>{
+    if(o.isMesh||o.isPoints){
+      if(o.geometry && !SHARED_RES.has(o.geometry)) o.geometry.dispose();
+      const mats=Array.isArray(o.material)?o.material:[o.material];
+      mats.forEach(m=>{
+        if(!m) return;
+        if(m.map && !SHARED_RES.has(m.map)) m.map.dispose();
+        if(!SHARED_RES.has(m)) m.dispose();
+      });
+    }
+  });
+  scene.remove(levelGroup);
+  levelGroup=null;
+}
+
 function buildLevel(d){
   // снос прошлого уровня
-  if(levelGroup){ scene.remove(levelGroup); }
+  disposeLevel();
   enemies.forEach(e=>chargeSound(false,e)); enemies.length=0;
   rockets.length=0; pickups.length=0;
   for(let i=particles.length-1;i>=0;i--) killParticle(i);
-  while(eGroup.children.length) eGroup.remove(eGroup.children[0]);
+  while(eGroup.children.length){
+    const ch=eGroup.children[0];
+    ch.traverse(o=>{
+      if(o.geometry){
+        let shared=false;
+        for(const k in ETYPES) if(ETYPES[k].geo===o.geometry){ shared=true; break; }
+        if(!shared) o.geometry.dispose();
+      }
+      if(o.material) o.material.dispose();
+    });
+    eGroup.remove(ch);
+  }
+  starfield=null; wallAnim=[];
+
+  // атмосфера этой глубины
+  applyAtmosphere(d);
 
   levelGroup=new THREE.Group(); scene.add(levelGroup);
   const n=8+Math.min(d,7);
@@ -483,6 +608,7 @@ function buildLevel(d){
   floor.material.map=checkerTex.clone();
   floor.material.map.needsUpdate=true;
   floor.material.map.repeat.set(fw/2,fh/2);
+  floor.material.color.setScalar(1-0.45*NIGHT);
   floor.rotation.x=-Math.PI/2;
   floor.position.set(fw/2,0,fh/2);
   levelGroup.add(floor);
@@ -492,6 +618,7 @@ function buildLevel(d){
   for(let z=0;z<maze.H;z++)for(let x=0;x<maze.W;x++)
     if(maze.grid[z][x]===1) cells.push([x,z]);
   wallMesh=new THREE.InstancedMesh(wallGeo,wallMat,cells.length);
+  wallMesh.frustumCulled=false; // инстансы раскиданы по всему лабиринту
   const m=new THREE.Matrix4();
   cells.forEach(([x,z],i)=>{
     m.makeTranslation((x+0.5)*CS,WALL_H/2,(z+0.5)*CS);
@@ -504,7 +631,7 @@ function buildLevel(d){
   const q=[[1,1]]; distMap[1][1]=0; let far=[1,1],fd=0;
   while(q.length){
     const [x,z]=q.shift();
-    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    for(const [dx,dz] of DIRS4){
       const nx=x+dx,nz=z+dz;
       if(nx<0||nz<0||nx>=maze.W||nz>=maze.H) continue;
       if(maze.grid[nz][nx]===0&&distMap[nz][nx]<0){
@@ -526,18 +653,25 @@ function buildLevel(d){
   beacon.renderOrder=-1;
   levelGroup.add(beacon);
   const ring=new THREE.Mesh(new THREE.TorusGeometry(1.3,0.06,8,40),
-    new THREE.MeshBasicMaterial({color:0xffffff}));
+    new THREE.MeshBasicMaterial({color:0xffffff,fog:false}));
   ring.rotation.x=Math.PI/2; ring.position.set(exitPos.x,0.08,exitPos.z);
   levelGroup.add(ring);
+  // ночью у выхода загорается настоящий свет
+  const beaconLight=new THREE.PointLight(0xffffff, NIGHT*1.6, 20, 1);
+  beaconLight.position.set(exitPos.x,3,exitPos.z);
+  levelGroup.add(beaconLight);
   levelGroup.userData={beacon,ring};
 
-  // гигантские фигуры в небе — каждый уровень новое небо
+  // гигантские фигуры в небе — каждый уровень новое небо;
+  // днём чернильные, ночью становятся бледными призраками
   const skyGeos=[new THREE.IcosahedronGeometry(1,1),new THREE.TorusGeometry(1,0.3,8,26),
     new THREE.OctahedronGeometry(1,0),new THREE.TorusKnotGeometry(1,0.25,60,10)];
+  const ghost=new THREE.Color(0x17140f).lerp(new THREE.Color(0xc7d0e8),NIGHT);
   for(let i=0;i<9;i++){
     const g=skyGeos[rndi(0,skyGeos.length-1)];
-    const mat=new THREE.MeshBasicMaterial({color:i<2?RED:0x17140f,
-      wireframe:true,transparent:true,opacity:i<2?0.5:0.32});
+    const mat=new THREE.MeshBasicMaterial({color:i<2?RED:ghost.clone(),
+      wireframe:true,transparent:true,fog:false,
+      opacity:i<2?0.5+NIGHT*0.3:0.32+NIGHT*0.4});
     const mesh=new THREE.Mesh(g,mat);
     const a=rnd(0,Math.PI*2), rr=rnd(60,150);
     mesh.position.set(fw/2+Math.cos(a)*rr, rnd(30,95), fh/2+Math.sin(a)*rr);
@@ -545,6 +679,46 @@ function buildLevel(d){
     mesh.userData={spin:rnd(0.05,0.25)*(Math.random()<0.5?-1:1)};
     mesh.userData.sky=true;
     levelGroup.add(mesh);
+  }
+
+  // звёзды — проступают вместе с ночью
+  if(NIGHT>0.03){
+    const cnt=Math.floor(160+NIGHT*220);
+    const pos=new Float32Array(cnt*3);
+    for(let i=0;i<cnt;i++){
+      const th=rnd(0,Math.PI*2), ph=rnd(0.08,1.35);
+      pos[i*3]=Math.cos(th)*Math.cos(ph)*260;
+      pos[i*3+1]=Math.sin(ph)*260;
+      pos[i*3+2]=Math.sin(th)*Math.cos(ph)*260;
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    starfield=new THREE.Points(g,new THREE.PointsMaterial({color:0xdfe6ff,
+      size:1.6,sizeAttenuation:false,transparent:true,opacity:0.85*NIGHT,fog:false}));
+    starfield.position.set(fw/2,0,fh/2);
+    levelGroup.add(starfield);
+  }
+
+  // назначение живых стен:
+  // глубина 10 — только покачивание; 11+ — падение, лифты и бродяги
+  if(d>=10){
+    const interior=[];
+    cells.forEach(([x,z],i)=>{
+      if(x>0&&z>0&&x<maze.W-1&&z<maze.H-1) interior.push(i);
+    });
+    interior.sort(()=>Math.random()-0.5);
+    const K = d===10 ? 6 : Math.min(4+(d-10)*2, 14);
+    for(let k=0;k<Math.min(K,interior.length);k++){
+      const i=interior[k];
+      const ax=Math.random()<0.5, sg=Math.random()<0.5?1:-1;
+      wallAnim.push({
+        idx:i, gx:cells[i][0], gz:cells[i][1],
+        mode:Math.random()<0.45?'wanderer':'elevator',
+        tip:Math.random()<0.5, tx:ax?sg:0, tz:ax?0:sg,
+        phase:rnd(0,9), state:'up', t:rnd(3,9), p:0, y:0, dur:1.5,
+        solid:true, pushed:false, frozen:(d===10)
+      });
+    }
   }
 
   // спавн врагов
@@ -567,9 +741,170 @@ function resetPlayer(){
   gunState.forEach(s=>{s.ammo=WEAPONS[s.w].mag; s.reloading=0;});
   curW=0; switchT=0.35; cooldown=0;
   const hint=document.getElementById('hint');
+  hint.textContent = depth>=11 ? 'лабиринт перестраивается — не доверяй стенам'
+    : depth===10 ? 'стены дышат. пока просто дышат'
+    : depth>=7 ? 'ночь. держись столба света'
+    : 'найди белый столб света — он ведёт глубже';
   hint.style.opacity=0.6;
   setTimeout(()=>hint.style.opacity=0,7000);
   updateHUD();
+}
+
+// ---------- живые стены (глубина 10+) ----------
+const _m4=new THREE.Matrix4(), _q=new THREE.Quaternion(), _e=new THREE.Euler(),
+      _v=new THREE.Vector3(), _s1=new THREE.Vector3(1,1,1), _off=new THREE.Vector3();
+
+function setWallInstance(a,y,tilt){
+  const cx=(a.gx+0.5)*CS, cz=(a.gz+0.5)*CS;
+  _e.set(tilt*a.tx, 0, tilt*a.tz);
+  _q.setFromEuler(_e);
+  _off.set(0,WALL_H/2,0).applyQuaternion(_q); // вращение вокруг нижнего ребра
+  _v.set(cx+_off.x, _off.y+y, cz+_off.z);
+  _m4.compose(_v,_q,_s1);
+  wallMesh.setMatrixAt(a.idx,_m4);
+  wallMesh.instanceMatrix.needsUpdate=true;
+}
+// путь от игрока к выходу, если клетку (sealX,sealZ) закрыть
+function pathOK(sealX,sealZ){
+  const W=maze.W,H=maze.H;
+  const sx=clamp(Math.floor(player.pos.x/CS),0,W-1);
+  const sz=clamp(Math.floor(player.pos.z/CS),0,H-1);
+  const ex=Math.floor(exitPos.x/CS), ez=Math.floor(exitPos.z/CS);
+  if((sx===sealX&&sz===sealZ)||(ex===sealX&&ez===sealZ)) return false;
+  const seen=new Uint8Array(W*H);
+  const q=[[sx,sz]]; seen[sz*W+sx]=1;
+  while(q.length){
+    const [x,z]=q.pop();
+    if(x===ex&&z===ez) return true;
+    for(const [dx,dz] of DIRS4){
+      const nx=x+dx,nz=z+dz;
+      if(nx<0||nz<0||nx>=W||nz>=H) continue;
+      const id=nz*W+nx;
+      if(seen[id]) continue;
+      if(maze.grid[nz][nx]===1) continue;
+      if(nx===sealX&&nz===sealZ) continue;
+      seen[id]=1; q.push([nx,nz]);
+    }
+  }
+  return false;
+}
+function cellOccupied(gx,gz){
+  const test=(x,z,r)=>{
+    const cx=clamp(x,gx*CS,(gx+1)*CS), cz=clamp(z,gz*CS,(gz+1)*CS);
+    return (x-cx)*(x-cx)+(z-cz)*(z-cz) < r*r;
+  };
+  if(test(player.pos.x,player.pos.z,PLAYER_R+0.15)) return true;
+  for(const e of enemies) if(test(e.center.x,e.center.z,e.r*0.8+0.15)) return true;
+  return false;
+}
+// вытолкнуть сущность из клетки (стена встала туда, где кто-то стоял)
+function pushOutOfCell(gx,gz,pos,r){
+  const minx=gx*CS, maxx=(gx+1)*CS, minz=gz*CS, maxz=(gz+1)*CS;
+  const cx=clamp(pos.x,minx,maxx), cz=clamp(pos.z,minz,maxz);
+  const dx=pos.x-cx, dz=pos.z-cz, d2=dx*dx+dz*dz;
+  if(d2>r*r) return false;
+  if(d2>1e-9){
+    const d=Math.sqrt(d2), push=(r-d)/d;
+    const nx=pos.x+dx*push, nz=pos.z+dz*push;
+    if(!collide(nx,nz,r)){ pos.x=nx; pos.z=nz; return true; }
+    pos.x+=dx/d*(r-d+0.05); pos.z+=dz/d*(r-d+0.05);
+    return true;
+  }
+  // центр внутри клетки — к ближайшей свободной грани
+  const cands=[[minx-r-0.03,pos.z],[maxx+r+0.03,pos.z],[pos.x,minz-r-0.03],[pos.x,maxz+r+0.03]];
+  for(const [px,pz] of cands) if(!collide(px,pz,r)){ pos.x=px; pos.z=pz; return true; }
+  const dl=pos.x-minx, dr=maxx-pos.x, dn=pos.z-minz, df=maxz-pos.z;
+  const mn=Math.min(dl,dr,dn,df);
+  if(mn===dl) pos.x=minx-r-0.03; else if(mn===dr) pos.x=maxx+r+0.03;
+  else if(mn===dn) pos.z=minz-r-0.03; else pos.z=maxz+r+0.03;
+  return true;
+}
+function pickWanderTarget(a){
+  const ex=Math.floor(exitPos.x/CS), ez=Math.floor(exitPos.z/CS);
+  for(let tries=0;tries<40;tries++){
+    const gx=rndi(1,maze.W-2), gz=rndi(1,maze.H-2);
+    if(maze.grid[gz][gx]!==0) continue;
+    const d=Math.abs(gx-a.gx)+Math.abs(gz-a.gz);
+    if(d<3||d>14) continue;
+    if(Math.abs(gx-ex)+Math.abs(gz-ez)<2) continue;
+    let busy=false;
+    for(const o of wallAnim) if(o!==a&&o.gx===gx&&o.gz===gz){busy=true;break;}
+    if(busy) continue;
+    if(cellOccupied(gx,gz)) continue;
+    return [gx,gz];
+  }
+  return null;
+}
+function nearVol(a){
+  const d=Math.hypot((a.gx+0.5)*CS-player.pos.x,(a.gz+0.5)*CS-player.pos.z);
+  return clamp(1-d/30,0.06,1);
+}
+function nearShake(a,amt){
+  const d=Math.hypot((a.gx+0.5)*CS-player.pos.x,(a.gz+0.5)*CS-player.pos.z);
+  if(d<16) shake=Math.min(shake+amt*(1-d/16),1.2);
+}
+function wallDust(a){
+  for(let i=0;i<12;i++){
+    const px=(a.gx+Math.random())*CS, pz=(a.gz+Math.random())*CS;
+    spawnParticle(new THREE.Vector3(px,0.15,pz),
+      new THREE.Vector3(rnd(-1.2,1.2),rnd(0.5,2),rnd(-1.2,1.2)),
+      rnd(0.7,1.3), rnd(0.18,0.32), 0x8d8574, false, 2.2);
+  }
+}
+function updateWallAnim(dt){
+  if(!wallMesh||!wallAnim.length) return;
+  for(const a of wallAnim){
+    if(a.state==='up'){
+      a.t-=dt;
+      // живое покачивание — лабиринт дышит
+      setWallInstance(a,0,Math.sin(gameT*0.8+a.phase)*0.025);
+      if(a.t<=0&&!a.frozen){
+        a.state='sinking'; a.p=0; a.dur=rnd(1.3,1.9);
+        SFX.rumble(nearVol(a)); nearShake(a,0.18);
+      }
+    } else if(a.state==='sinking'){
+      a.p+=dt/a.dur;
+      const k=easeInOut(Math.min(a.p,1));
+      a.y=-SINK_DEPTH*k;
+      const tilt=a.tip?0.7*Math.min(k*1.3,1):0; // «падение» — заваливание
+      setWallInstance(a,a.y,tilt);
+      if(a.solid&&a.y<SOLID_Y){ maze.grid[a.gz][a.gx]=0; a.solid=false; wallDust(a); }
+      if(a.p>=1){ a.state='down'; a.t=a.mode==='elevator'?rnd(2.2,4):rnd(0.8,1.6); a.y=-SINK_DEPTH; }
+    } else if(a.state==='down'){
+      a.t-=dt;
+      if(a.t<=0){
+        if(a.mode==='wanderer'){
+          const tgt=pickWanderTarget(a);
+          if(tgt){ a.gx=tgt[0]; a.gz=tgt[1]; setWallInstance(a,-SINK_DEPTH,0); }
+        }
+        if(!cellOccupied(a.gx,a.gz)&&pathOK(a.gx,a.gz)){
+          a.state='rising'; a.p=0; a.dur=rnd(1.2,1.6); a.pushed=false;
+          SFX.rumble(nearVol(a)); nearShake(a,0.18);
+        } else a.t=rnd(0.5,1.0);
+      }
+    } else if(a.state==='rising'){
+      a.p+=dt/a.dur;
+      const k=easeInOut(Math.min(a.p,1));
+      a.y=-SINK_DEPTH*(1-k);
+      const tilt=a.tip?0.7*(1-Math.min(k*1.3,1)):0;
+      setWallInstance(a,a.y,tilt);
+      if(!a.solid&&a.y>SOLID_Y){
+        if(pathOK(a.gx,a.gz)){
+          maze.grid[a.gz][a.gx]=1; a.solid=true;
+          wallDust(a); SFX.thud(nearVol(a)); nearShake(a,0.3);
+          // стена встала на кого-то — выталкиваем
+          if(pushOutOfCell(a.gx,a.gz,player.pos,PLAYER_R+0.05)&&!a.pushed){
+            a.pushed=true; damagePlayer(7);
+          }
+          for(const e of enemies) pushOutOfCell(a.gx,a.gz,e.center,e.r*0.8+0.05);
+        } else {
+          // путь к выходу закрылся — подъём отменяется
+          a.state='sinking'; a.p=1-a.p;
+        }
+      }
+      if(a.p>=1){ a.state='up'; a.t=a.mode==='elevator'?rnd(5,9):rnd(3,6); a.y=0; }
+    }
+  }
 }
 
 // ---------- враги ----------
@@ -595,11 +930,11 @@ function spawnEnemy(x,z,d){
   const mesh=new THREE.Mesh(t.geo,mat);
   mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(t.geo),
     new THREE.LineBasicMaterial({color:0x0d0b09})));
-  // прицельная линия и луч
+  // прицельная линия и луч — сквозь туман, чтобы светились в ночи
   const aim=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.016,1,5),
-    new THREE.MeshBasicMaterial({color:RED,transparent:true,opacity:0.55}));
+    new THREE.MeshBasicMaterial({color:RED,transparent:true,opacity:0.55,fog:false}));
   const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,1,6),
-    new THREE.MeshBasicMaterial({color:0xff2b17}));
+    new THREE.MeshBasicMaterial({color:0xff2b17,fog:false}));
   aim.visible=false; beam.visible=false;
   scene.add(aim); scene.add(beam);
   eGroup.add(mesh);
@@ -647,7 +982,7 @@ function updateEnemies(dt){
     e.phase+=dt;
     if(e.spawnT>0){ e.spawnT-=dt; e.mesh.scale.setScalar(clamp(1-e.spawnT/0.5,0.01,1)); }
     e.flash=Math.max(0,e.flash-dt*5);
-    e.mesh.material.emissiveIntensity=0.5+e.flash*1.2;
+    e.mesh.material.emissiveIntensity=0.5+NIGHT*0.45+e.flash*1.2;
     const dx=player.pos.x-e.center.x, dz=player.pos.z-e.center.z;
     const dist=Math.hypot(dx,dz);
     const los=dist<40?LOS(e.center.x,e.center.z,player.pos.x,player.pos.z):false;
@@ -681,7 +1016,7 @@ function updateEnemies(dt){
     }
     if(e.beamT>0){ e.beamT-=dt; if(e.beamT<=0) e.beam.visible=false; }
 
-    // движение со скольжением по стенам
+    // движение со скольжением по стенам (в том числе живым)
     const sp=e.type.speed*(e.state==='charge'?0.3:1);
     moveMC(e.center,mvx*sp*dt,mvz*sp*dt,e.r*0.8);
     // отталкивание от других фигур
@@ -729,11 +1064,10 @@ function damagePlayer(dmg){
 function die(){
   state='dead';
   bestDepth=Math.max(bestDepth,depth);
-  chargeSoundSafeAll();
+  enemies.forEach(e=>chargeSound(false,e));
   document.exitPointerLock();
   showDeath();
 }
-function chargeSoundSafeAll(){ enemies.forEach(e=>chargeSound(false,e)); }
 
 // ---------- оружие ----------
 const WEAPONS=[
@@ -869,7 +1203,6 @@ function hitscan(o,d,dmg){
   if(best) damageEnemy(best,dmg,hitP);
   else if(bt<maxD) sparks(hitP,3,0x2a241c);
 }
-// точный выстрел — мгновенный hitscan
 
 // ---------- ракеты ----------
 function spawnRocket(){
@@ -924,20 +1257,24 @@ function updateRockets(dt){
     let hit=r.dist>130||r.pos.y<0.15||collide(r.pos.x,r.pos.z,0.1);
     if(!hit) for(const e of enemies)
       if(e.center.distanceTo(r.pos)<e.r+0.35){hit=true;break;}
-    if(hit){ scene.remove(r.mesh); rockets.splice(i,1); explode(r.pos.clone()); }
+    if(hit){
+      scene.remove(r.mesh);
+      r.mesh.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); });
+      rockets.splice(i,1); explode(r.pos.clone());
+    }
   }
 }
 
 // ---------- частицы ----------
 const partGeo=new THREE.TetrahedronGeometry(1);
-function spawnParticle(pos,vel,life,size,color,grav,gravMul){
+function spawnParticle(pos,vel,life,size,color,grav,mul){
   if(particles.length>340) return;
   const mat=new THREE.MeshBasicMaterial({color,transparent:true});
   const m=new THREE.Mesh(partGeo,mat);
   m.position.copy(pos); m.scale.setScalar(size);
   particleGroup.add(m);
-  particles.push({m,vel,life,max:life,grav:grav?GRAV*(gravMul||1):0,
-    spin:new THREE.Vector3(rnd(-5,5),rnd(-5,5),rnd(-5,5)),grow:grav?0:1});
+  particles.push({m,vel,life,max:life,grav:grav?GRAV*(mul||1):0,
+    spin:new THREE.Vector3(rnd(-5,5),rnd(-5,5),rnd(-5,5)),grow:grav?0:(mul||1)});
 }
 function killParticle(i){
   particleGroup.remove(particles[i].m);
@@ -984,8 +1321,12 @@ function updatePickups(dt){
     if(d<1.4&&player.hp<100){
       player.hp=Math.min(100,player.hp+22); score+=5;
       SFX.pickup(); updateHUD();
-      levelGroup.remove(p.m); pickups.splice(i,1);
-    } else if(p.t<=0){ levelGroup.remove(p.m); pickups.splice(i,1); }
+      levelGroup.remove(p.m); p.m.geometry.dispose(); p.m.material.dispose();
+      pickups.splice(i,1);
+    } else if(p.t<=0){
+      levelGroup.remove(p.m); p.m.geometry.dispose(); p.m.material.dispose();
+      pickups.splice(i,1);
+    }
   }
 }
 
@@ -994,6 +1335,11 @@ const $=id=>document.getElementById(id);
 function hitmark(){
   const c=$('crosshair');
   c.classList.remove('hit'); void c.offsetWidth; c.classList.add('hit');
+}
+function instabText(){
+  if(depth>=11) return 'лабиринт <b>нестабилен</b>';
+  if(depth===10) return 'стены <b>дышат</b>';
+  return '';
 }
 function updateHUD(){
   $('ui-depth').textContent=String(depth).padStart(2,'0');
@@ -1008,6 +1354,12 @@ function updateHUD(){
   $('ammo-cur').textContent=gunState[curW].ammo;
   $('ammo-mag').textContent=WEAPONS[curW].mag;
   $('reload-tag').textContent=gunState[curW].reloading>0?'перезарядка':'';
+  const it=instabText();
+  if(it!==lastInstab){
+    lastInstab=it;
+    const el=$('ui-instab');
+    el.innerHTML=it; el.style.display=it?'block':'none';
+  }
 }
 
 // ---------- главный цикл ----------
@@ -1016,9 +1368,9 @@ function loop(){
   requestAnimationFrame(loop);
   const dt=Math.min(clock.getDelta(),0.05);
 
-  // чёрное солнце — всегда на одном направлении
-  blackSun.position.copy(camera.position).addScaledVector(SUNDIR,340);
-  blackSun.quaternion.copy(camera.quaternion);
+  // чёрное солнце (ночью — красное затмение) всегда на одном направлении
+  sunGroup.position.copy(camera.position).addScaledVector(SUNDIR,340);
+  sunGroup.quaternion.copy(camera.quaternion);
 
   if(state==='playing'){
     gameT+=dt;
@@ -1042,6 +1394,9 @@ function loop(){
     moveMC(player.pos,player.vel.x*dt,player.vel.z*dt,PLAYER_R);
     player.pos.y+=player.vel.y*dt;
     if(player.pos.y<=0){ player.pos.y=0; player.vel.y=0; player.onGround=true; }
+
+    // --- живые стены (могут вытолкнуть игрока) ---
+    updateWallAnim(dt);
 
     // шаги + бобинг
     const spxz=Math.hypot(player.vel.x,player.vel.z);
@@ -1069,6 +1424,12 @@ function loop(){
       camera.fov+=(targetFov-camera.fov)*Math.min(1,10*dt);
       camera.updateProjectionMatrix();
     }
+
+    // --- фонарь: в ночи дрожит, как пламя ---
+    if(playerLightBase>0){
+      playerLight.intensity=playerLightBase*
+        (0.93+0.05*Math.sin(gameT*6.1)+0.03*Math.sin(gameT*15.7));
+    } else playerLight.intensity=0;
 
     // --- view-model ---
     recoil*=Math.exp(-9*dt);
@@ -1106,9 +1467,10 @@ function loop(){
       r.scale.setScalar(1+Math.sin(gameT*2.2)*0.12);
       r.rotation.z+=dt*0.8;
     }
-    // гиганты неба вращаются
+    // гиганты неба вращаются, звёзды ползут
     if(levelGroup) for(const o of levelGroup.children)
       if(o.userData.sky){ o.rotation.y+=o.userData.spin*dt; o.rotation.x+=o.userData.spin*0.4*dt; }
+    if(starfield) starfield.rotation.y+=0.005*dt;
 
     // выход: дойти до света
     if(Math.hypot(player.pos.x-exitPos.x,player.pos.z-exitPos.z)<1.5){
