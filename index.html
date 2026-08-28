@@ -21,7 +21,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'VT
 #damage-vignette{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 20%,rgba(180,0,0,0.7) 100%);pointer-events:none;opacity:0;transition:opacity 0.5s ease-out;z-index:5}
 #flash{position:absolute;inset:0;background:rgba(255,200,100,0.5);pointer-events:none;opacity:0;transition:opacity 0.08s ease-out;z-index:6}
 #hud{position:absolute;inset:0;pointer-events:none;z-index:10;font-family:'VT323',monospace}
-.hud-bar{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);width:95%;max-width:1100px;display:flex;justify-content:space-between;align-items:flex-end;gap:8px}
+.hud-bar{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);width:95%;max-width:1100px;display:flex;justify-content:space-between;align-items:flex-end;gap:8px;flex-wrap:wrap}
 .hud-panel{background:linear-gradient(180deg,rgba(30,15,10,0.92),rgba(50,20,12,0.92));border:2px solid var(--rust);border-radius:3px;padding:6px 16px;min-width:130px;text-align:center;box-shadow:0 0 20px rgba(0,0,0,0.8),inset 0 0 12px rgba(0,0,0,0.6);position:relative}
 .hud-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
 .hud-panel .label{font-size:13px;color:var(--rust);letter-spacing:3px;display:block;margin-bottom:2px}
@@ -285,42 +285,34 @@ function generateSprites() {
       const cx_ = 32, cy_ = 50;
       const bob = Math.sin(frame * Math.PI / 2) * 2;
       const sway = Math.cos(frame * Math.PI / 2) * 2;
-      // тень
       cx.fillStyle = 'rgba(0,0,0,0.4)';
       cx.beginPath(); cx.ellipse(cx_, 60, 12, 3, 0, 0, Math.PI*2); cx.fill();
-      // тело
       const g = cx.createRadialGradient(cx_+sway, cy_-12+bob, 2, cx_+sway, cy_-12+bob, 14);
       g.addColorStop(0, '#9a2510'); g.addColorStop(1, '#5a1005');
       cx.fillStyle = g;
       cx.beginPath(); cx.ellipse(cx_+sway, cy_-12+bob, 9, 14, 0, 0, Math.PI*2); cx.fill();
-      // руки
       cx.fillStyle = '#8b2010';
       const armSway = Math.sin(frame * Math.PI / 2 + Math.PI) * 3;
       cx.beginPath();
       cx.ellipse(cx_-10+sway-armSway*0.3, cy_-8+bob+armSway, 3, 8, 0.3, 0, Math.PI*2);
       cx.ellipse(cx_+10+sway+armSway*0.3, cy_-8+bob-armSway, 3, 8, -0.3, 0, Math.PI*2);
       cx.fill();
-      // ноги
       cx.fillStyle = '#5a1005';
       const legOffset = Math.sin(frame * Math.PI / 2) * 2;
       cx.fillRect(cx_-6+sway, cy_+bob, 4, 10+legOffset);
       cx.fillRect(cx_+2+sway, cy_+bob, 4, 10-legOffset);
-      // когти на ногах
       cx.fillStyle = '#ffeebb';
       cx.fillRect(cx_-7+sway, cy_+bob+9+legOffset, 1, 2);
       cx.fillRect(cx_+1+sway, cy_+bob+9-legOffset, 1, 2);
-      // голова
       const hg = cx.createRadialGradient(cx_+sway-2, cy_-26+bob, 2, cx_+sway, cy_-24+bob, 9);
       hg.addColorStop(0, '#b02818'); hg.addColorStop(1, '#7a1810');
       cx.fillStyle = hg;
       cx.beginPath(); cx.arc(cx_+sway, cy_-24+bob, 8, 0, Math.PI*2); cx.fill();
-      // рога
       cx.fillStyle = '#2a0a05';
       cx.beginPath();
       cx.moveTo(cx_-5+sway, cy_-30+bob); cx.lineTo(cx_-9+sway, cy_-40+bob); cx.lineTo(cx_-2+sway, cy_-32+bob); cx.fill();
       cx.beginPath();
       cx.moveTo(cx_+5+sway, cy_-30+bob); cx.lineTo(cx_+9+sway, cy_-40+bob); cx.lineTo(cx_+2+sway, cy_-32+bob); cx.fill();
-      // глаза — светящиеся
       cx.fillStyle = '#ffaa00';
       cx.shadowColor = '#ff4500'; cx.shadowBlur = 6;
       cx.fillRect(cx_-4+sway, cy_-26+bob, 3, 2);
@@ -329,7 +321,6 @@ function generateSprites() {
       cx.fillStyle = '#ff0000';
       cx.fillRect(cx_-3+sway, cy_-25+bob, 1, 1);
       cx.fillRect(cx_+2+sway, cy_-25+bob, 1, 1);
-      // зубы
       cx.fillStyle = '#ffeebb';
       cx.fillRect(cx_-3+sway, cy_-19+bob, 6, 2);
       cx.fillStyle = '#1a0505';
@@ -345,33 +336,27 @@ function generateSprites() {
       const cx_ = 32, cy_ = 50;
       const bob = Math.sin(frame * Math.PI / 2) * 1.5;
       const mouthOpen = (frame === 2) ? 5 : 1;
-      // тень
       cx.fillStyle = 'rgba(0,0,0,0.5)';
       cx.beginPath(); cx.ellipse(cx_, 60, 15, 4, 0, 0, Math.PI*2); cx.fill();
-      // тело
       const g = cx.createRadialGradient(cx_, cy_-10+bob, 4, cx_, cy_-10+bob, 18);
       g.addColorStop(0, '#c05070'); g.addColorStop(1, '#702040');
       cx.fillStyle = g;
       cx.beginPath(); cx.ellipse(cx_, cy_-10+bob, 14, 18, 0, 0, Math.PI*2); cx.fill();
-      // ноги
       cx.fillStyle = '#803050';
       cx.fillRect(cx_-8, cy_+6+bob, 5, 8);
       cx.fillRect(cx_+3, cy_+6+bob, 5, 8);
       cx.fillStyle = '#3a0a1a';
       cx.fillRect(cx_-9, cy_+14+bob, 7, 2);
       cx.fillRect(cx_+2, cy_+14+bob, 7, 2);
-      // голова
       const hg = cx.createRadialGradient(cx_-2, cy_-28+bob, 3, cx_, cy_-26+bob, 12);
       hg.addColorStop(0, '#d06080'); hg.addColorStop(1, '#904060');
       cx.fillStyle = hg;
       cx.beginPath(); cx.arc(cx_, cy_-26+bob, 12, 0, Math.PI*2); cx.fill();
-      // рога
       cx.fillStyle = '#3a0a1a';
       cx.beginPath();
       cx.moveTo(cx_-8, cy_-36+bob); cx.lineTo(cx_-13, cy_-48+bob); cx.lineTo(cx_-3, cy_-38+bob); cx.fill();
       cx.beginPath();
       cx.moveTo(cx_+8, cy_-36+bob); cx.lineTo(cx_+13, cy_-48+bob); cx.lineTo(cx_+3, cy_-38+bob); cx.fill();
-      // глаза
       cx.fillStyle = '#ffff00';
       cx.shadowColor = '#ff4500'; cx.shadowBlur = 8;
       cx.fillRect(cx_-7, cy_-28+bob, 4, 3);
@@ -380,10 +365,8 @@ function generateSprites() {
       cx.fillStyle = '#ff0000';
       cx.fillRect(cx_-6, cy_-27+bob, 1, 1);
       cx.fillRect(cx_+4, cy_-27+bob, 1, 1);
-      // пасть
       cx.fillStyle = '#1a0505';
       cx.fillRect(cx_-7, cy_-19+bob-mouthOpen/2, 14, 3+mouthOpen);
-      // зубы
       cx.fillStyle = '#ffeebb';
       for (let i = 0; i < 5; i++) {
         cx.fillRect(cx_-7+i*3, cy_-19+bob-mouthOpen/2, 2, 2);
@@ -480,14 +463,12 @@ function generateMaze(w, h) {
     grid[ny * 2 + 1][nx * 2 + 1] = 0;
     stack.push([nx, ny]);
   }
-  // Дополнительные проходы
   const extraHoles = Math.floor(w * h * 0.06);
   for (let i = 0; i < extraHoles; i++) {
     const x = 1 + Math.floor(Math.random() * (w - 2));
     const y = 1 + Math.floor(Math.random() * (h - 2));
     grid[y][x] = 0;
   }
-  // Типы стен
   const wallTypes = [1, 1, 1, 1, 2, 2, 3, 4, 5];
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -872,7 +853,6 @@ function fireWeapon() {
 
 function fireHitscan(angle, damage) {
   const cosA = Math.cos(angle), sinA = Math.sin(angle);
-  // Проверка врагов
   let hitEnemy = null, hitDist = Infinity;
   for (const e of enemies) {
     if (!e.alive) continue;
@@ -884,7 +864,6 @@ function fireHitscan(angle, damage) {
     const radius = ENEMY_TYPES[e.type].size;
     if (perpDist < radius && t < hitDist) { hitDist = t; hitEnemy = e; }
   }
-  // Проверка стены
   let x = player.x, y = player.y, dist = 0;
   const step = 0.05;
   let wallDist = Infinity;
@@ -912,7 +891,6 @@ function damageEnemy(e, dmg) {
     playSound(ENEMY_TYPES[e.type].deathSound);
     spawnParticles(e.x, e.y, 25, '#8b0000', 0.1, 45);
     spawnParticles(e.x, e.y, 8, '#ff4500', 0.12, 30);
-    // Дроп
     if (Math.random() < 0.45) {
       const types = ['ammoRevolver', 'ammoShotgun', 'ammoRocket', 'health', 'health', 'armor'];
       const t = types[Math.floor(Math.random() * types.length)];
@@ -947,7 +925,6 @@ function tryPickupNearby() {
     const dx = p.x - player.x, dy = p.y - player.y;
     if (dx*dx + dy*dy < 1.0) { pickUp(p); return; }
   }
-  // Проверка выхода
   if (exitPos) {
     const dx = exitPos.x - player.x, dy = exitPos.y - player.y;
     if (dx*dx + dy*dy < 1.0) nextLevel();
@@ -1010,6 +987,7 @@ function initBackground() {
 
 // ====================== RAYCASTING ======================
 function castRay(rayAngle) {
+  if (!MAP.grid) return { dist: 100, type: 1, texX: 0, side: 0 };
   const rayDirX = Math.cos(rayAngle);
   const rayDirY = Math.sin(rayAngle);
   let mapX = Math.floor(player.x), mapY = Math.floor(player.y);
@@ -1111,7 +1089,6 @@ function renderSpritesIntoImageData(data) {
   for (const p of projectiles) {
     sprites.push({ x: p.x, y: p.y, isProjectile: true, size: 0.2, projType: p.type, owner: p.owner });
   }
-  // Сортировка по расстоянию (дальние первыми)
   sprites.sort((a, b) => {
     const da = (a.x-player.x)**2 + (a.y-player.y)**2;
     const db = (b.x-player.x)**2 + (b.y-player.y)**2;
@@ -1147,7 +1124,6 @@ function renderSpritesIntoImageData(data) {
       const sx = screenX;
       const r = Math.max(2, 10 / transformY);
       const fog = Math.max(0.3, 1 - transformY / CONFIG.maxDepth);
-      // Свечение
       for (let dy_ = -r*3; dy_ <= r*3; dy_++) {
         for (let dx_ = -r*3; dx_ <= r*3; dx_++) {
           const px = sx + dx_, py = sy + dy_;
@@ -1190,7 +1166,6 @@ function renderSpritesIntoImageData(data) {
           b = b * 0.4;
         }
         if (s.isExit) {
-          // Пульсация для портала
           const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.005);
           r = r * pulse;
           g = g * pulse;
@@ -1245,7 +1220,6 @@ function renderWeapon() {
   octx.clearRect(0, 0, overlay.width, overlay.height);
   if (!player.alive) return;
 
-  const fireProgress = 1 - player.fireAnim;
   const fireOffset = player.fireAnim > 0 ? Math.sin(player.fireAnim * Math.PI) * 25 : 0;
   const sway = Math.sin(player.bobPhase) * 4;
   const bobY = Math.cos(player.bobPhase * 2) * 3;
@@ -1261,21 +1235,16 @@ function renderWeapon() {
 }
 
 function drawRevolver(cx, cy) {
-  // Корпус
   octx.fillStyle = '#2a2018';
   octx.fillRect(cx - 16, cy - 70, 32, 80);
-  // Тень
   octx.fillStyle = 'rgba(0,0,0,0.5)';
   octx.fillRect(cx - 16, cy - 70, 4, 80);
-  // Свет
   octx.fillStyle = '#4a3528';
   octx.fillRect(cx + 10, cy - 70, 2, 80);
-  // Ствол
   octx.fillStyle = '#1a1208';
   octx.fillRect(cx - 7, cy - 100, 14, 50);
   octx.fillStyle = '#3a2a20';
   octx.fillRect(cx - 7, cy - 100, 3, 50);
-  // Барабан
   const g = octx.createRadialGradient(cx, cy - 12, 3, cx, cy - 12, 18);
   g.addColorStop(0, '#5a4530'); g.addColorStop(1, '#2a1a10');
   octx.fillStyle = g;
@@ -1285,7 +1254,6 @@ function drawRevolver(cx, cy) {
   octx.strokeStyle = '#1a1008';
   octx.lineWidth = 2;
   octx.stroke();
-  // Камеры барабана
   octx.fillStyle = '#1a0a05';
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2 - Math.PI/2 + player.fireAnim * 0.5;
@@ -1293,17 +1261,14 @@ function drawRevolver(cx, cy) {
     octx.arc(cx + Math.cos(a) * 10, cy - 12 + Math.sin(a) * 10, 3, 0, Math.PI*2);
     octx.fill();
   }
-  // Курок
   octx.fillStyle = '#3a2510';
   octx.fillRect(cx + 12, cy - 80, 5, 12);
-  // Рукоятка
   octx.fillStyle = '#3a1505';
   octx.fillRect(cx - 11, cy + 5, 22, 50);
   octx.fillStyle = '#5a2510';
   octx.fillRect(cx - 9, cy + 7, 4, 46);
   octx.fillStyle = '#2a0a05';
   octx.fillRect(cx + 7, cy + 7, 2, 46);
-  // Насечки
   octx.fillStyle = '#1a0505';
   for (let i = 0; i < 5; i++) octx.fillRect(cx - 9, cy + 12 + i*9, 18, 1);
 
@@ -1314,38 +1279,30 @@ function drawRevolver(cx, cy) {
 }
 
 function drawShotgun(cx, cy) {
-  // Два ствола
   octx.fillStyle = '#1a1208';
   octx.fillRect(cx - 14, cy - 110, 11, 80);
   octx.fillRect(cx + 3, cy - 110, 11, 80);
-  // Блик
   octx.fillStyle = '#3a2a20';
   octx.fillRect(cx - 13, cy - 110, 2, 80);
   octx.fillRect(cx + 4, cy - 110, 2, 80);
-  // Тень
   octx.fillStyle = '#0a0504';
   octx.fillRect(cx - 5, cy - 110, 2, 80);
   octx.fillRect(cx + 12, cy - 110, 2, 80);
-  // Отверстия стволов
   octx.fillStyle = '#000';
   octx.beginPath(); octx.arc(cx - 8.5, cy - 110, 4, 0, Math.PI*2); octx.fill();
   octx.beginPath(); octx.arc(cx + 8.5, cy - 110, 4, 0, Math.PI*2); octx.fill();
-  // Корпус
   octx.fillStyle = '#2a1a10';
   octx.fillRect(cx - 18, cy - 30, 36, 40);
   octx.fillStyle = '#4a2a18';
   octx.fillRect(cx - 18, cy - 30, 3, 40);
   octx.fillStyle = '#1a0a08';
   octx.fillRect(cx + 14, cy - 30, 4, 40);
-  // Рукоятка
   octx.fillStyle = '#3a1505';
   octx.fillRect(cx - 9, cy + 5, 18, 50);
   octx.fillStyle = '#5a2510';
   octx.fillRect(cx - 7, cy + 7, 3, 46);
-  // Насечки
   octx.fillStyle = '#1a0505';
   for (let i = 0; i < 5; i++) octx.fillRect(cx - 7, cy + 12 + i*9, 14, 1);
-  // Триггер
   octx.fillStyle = '#1a0a05';
   octx.fillRect(cx - 2, cy - 5, 4, 10);
 
@@ -1357,42 +1314,34 @@ function drawShotgun(cx, cy) {
 }
 
 function drawRocket(cx, cy) {
-  // Корпус
   octx.fillStyle = '#2a3a30';
   octx.fillRect(cx - 22, cy - 90, 44, 70);
-  // Блик
   octx.fillStyle = '#4a5a50';
   octx.fillRect(cx - 22, cy - 90, 4, 70);
   octx.fillStyle = '#1a2a20';
   octx.fillRect(cx + 16, cy - 90, 6, 70);
-  // Ствол
   octx.fillStyle = '#1a1208';
   octx.fillRect(cx - 9, cy - 120, 18, 35);
   octx.fillStyle = '#3a2a20';
   octx.fillRect(cx - 9, cy - 120, 3, 35);
-  // Отверстие ствола
   octx.fillStyle = '#000';
   octx.beginPath(); octx.arc(cx, cy - 120, 7, 0, Math.PI*2); octx.fill();
   octx.fillStyle = '#3a0a05';
   octx.beginPath(); octx.arc(cx, cy - 120, 5, 0, Math.PI*2); octx.fill();
-  // Оптический прицел
   octx.fillStyle = '#1a1a1a';
   octx.fillRect(cx - 4, cy - 105, 8, 12);
   octx.fillStyle = '#ff4500';
   octx.fillRect(cx - 1, cy - 100, 2, 2);
-  // Ракета видна в стволе
   if (player.ammo[2] > 0) {
     octx.fillStyle = '#cc3300';
     octx.fillRect(cx - 5, cy - 116, 10, 4);
     octx.fillStyle = '#ffcc40';
     octx.fillRect(cx - 3, cy - 117, 2, 2);
   }
-  // Рукоятка
   octx.fillStyle = '#3a1505';
   octx.fillRect(cx - 9, cy - 20, 18, 50);
   octx.fillStyle = '#5a2510';
   octx.fillRect(cx - 7, cy - 18, 3, 46);
-  // Рукоять заряжания
   octx.fillStyle = '#3a3a30';
   octx.fillRect(cx + 18, cy - 70, 10, 15);
   octx.fillStyle = '#1a1a10';
@@ -1407,7 +1356,6 @@ function drawRocket(cx, cy) {
 function drawMuzzleFlash(x, y, alpha, scale, color) {
   octx.save();
   octx.globalAlpha = alpha;
-  // Центральная вспышка
   const g = octx.createRadialGradient(x, y, 0, x, y, 30 * scale);
   g.addColorStop(0, '#ffffff');
   g.addColorStop(0.3, color);
@@ -1417,7 +1365,6 @@ function drawMuzzleFlash(x, y, alpha, scale, color) {
   octx.beginPath();
   octx.arc(x, y, 30 * scale, 0, Math.PI*2);
   octx.fill();
-  // Лучи
   octx.strokeStyle = color;
   octx.lineWidth = 2;
   for (let i = 0; i < 6; i++) {
@@ -1433,6 +1380,11 @@ function drawMuzzleFlash(x, y, alpha, scale, color) {
 
 // ====================== МИНИКАРТА ======================
 function renderMinimap() {
+  if (!MAP.grid) {
+    mctx.fillStyle = '#08050a';
+    mctx.fillRect(0, 0, minimap.width, minimap.height);
+    return;
+  }
   const mw = minimap.width, mh = minimap.height;
   const cellW = mw / MAP.w, cellH = mh / MAP.h;
   mctx.fillStyle = '#08050a';
@@ -1447,20 +1399,17 @@ function renderMinimap() {
       }
     }
   }
-  // Пикапы
   for (const p of pickups) {
     if (p.picked) continue;
     const c = { ammoRevolver: '#ffcc40', ammoShotgun: '#cc3300', ammoRocket: '#aa30a0', health: '#ff4040', armor: '#60c0ff' };
     mctx.fillStyle = c[p.type] || '#ffffff';
     mctx.fillRect(p.x * cellW - 2, p.y * cellH - 2, 4, 4);
   }
-  // Выход
   if (exitPos) {
     const t = performance.now() * 0.005;
     mctx.fillStyle = `rgba(64,255,128,${0.7 + 0.3 * Math.sin(t)})`;
     mctx.fillRect(exitPos.x * cellW - 3, exitPos.y * cellH - 3, 6, 6);
   }
-  // Враги (только близкие)
   for (const e of enemies) {
     if (!e.alive) continue;
     const dx = e.x - player.x, dy = e.y - player.y;
@@ -1470,7 +1419,6 @@ function renderMinimap() {
     mctx.arc(e.x * cellW, e.y * cellH, 2.5, 0, Math.PI*2);
     mctx.fill();
   }
-  // Игрок
   const px = player.x * cellW, py = player.y * cellH;
   mctx.fillStyle = '#ffeebb';
   mctx.beginPath();
@@ -1482,7 +1430,6 @@ function renderMinimap() {
   mctx.moveTo(px, py);
   mctx.lineTo(px + Math.cos(player.angle) * 12, py + Math.sin(player.angle) * 12);
   mctx.stroke();
-  // FOV конус
   mctx.fillStyle = 'rgba(255,200,80,0.1)';
   mctx.beginPath();
   mctx.moveTo(px, py);
@@ -1518,7 +1465,6 @@ function updatePlayer(dt) {
   if (player.cooldown > 0) player.cooldown -= dt;
   if (player.fireAnim > 0) player.fireAnim = Math.max(0, player.fireAnim - dt * 0.08);
   if (player.hurtFlash > 0) player.hurtFlash -= dt * 0.04;
-  // Затухание damage vignette
   const dv = document.getElementById('damage-vignette');
   if (player.hp > 60) dv.style.opacity = Math.max(0, parseFloat(dv.style.opacity || 0) - 0.02);
 }
@@ -1543,10 +1489,8 @@ function updateEnemies(dt) {
         const ny = e.y + Math.sin(e.angle) * speed;
         if (!isWall(nx, e.y)) e.x = nx;
         if (!isWall(e.x, ny)) e.y = ny;
-        // Избегать других врагов
       } else if (e.attackCooldown <= 0) {
         if (type.ranged) {
-          // Кидает снаряд
           spawnProjectile(
             e.x + Math.cos(e.angle) * 0.3,
             e.y + Math.sin(e.angle) * 0.3,
@@ -1556,14 +1500,12 @@ function updateEnemies(dt) {
             'enemy', 'fireball'
           );
         } else {
-          // Ближний бой
           if (dist < type.attackRange + 0.3) damagePlayer(type.damage);
         }
         e.attackCooldown = type.attackCooldown;
       }
     }
   }
-  // Удаление мёртвых после анимации
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (!enemies[i].alive && enemies[i].deathTimer <= 0) enemies.splice(i, 1);
   }
@@ -1609,7 +1551,6 @@ function explodeProjectile(p) {
   shakeAmount = Math.max(shakeAmount, 8);
   spawnParticles(p.x, p.y, 30, '#ff4500', 0.15, 40);
   spawnParticles(p.x, p.y, 15, '#ffeebb', 0.1, 25);
-  // AOE урон
   const radius = 1.5;
   if (p.owner === 'player') {
     for (const e of enemies) {
@@ -1646,7 +1587,6 @@ function updatePickups(dt) {
     const dx = p.x - player.x, dy = p.y - player.y;
     if (dx*dx + dy*dy < 0.35) pickUp(p);
   }
-  // Очистка подобранных
   for (let i = pickups.length - 1; i >= 0; i--) {
     if (pickups[i].picked) pickups.splice(i, 1);
   }
@@ -1671,12 +1611,9 @@ function loadLevel(level) {
   exitPos = null;
   const size = Math.min(28, 14 + level * 2);
   generateMaze(size, size);
-  // Игрок в углу
   player.x = 1.5; player.y = 1.5;
   player.angle = 0;
-  // Выход в дальнем углу
   exitPos = { x: size - 1.5, y: size - 1.5 };
-  // Враги
   const impCount = 3 + Math.floor(level * 1.5);
   const demonCount = Math.floor(level / 2);
   let attempts = 0;
@@ -1706,7 +1643,6 @@ function loadLevel(level) {
     }
     attempts++;
   }
-  // Пикапы
   const pickupCount = 4 + Math.floor(level / 2);
   const types = ['ammoRevolver', 'ammoShotgun', 'ammoRocket', 'health', 'armor'];
   attempts = 0; placed = 0;
@@ -1722,7 +1658,6 @@ function loadLevel(level) {
     }
     attempts++;
   }
-  // Обновить UI
   document.getElementById('level-num').textContent = level;
   player.level = level;
 }
@@ -1776,7 +1711,6 @@ function update(dt) {
   updateProjectiles(dt);
   updateParticles(dt);
   updatePickups(dt);
-  // Затухание shake
   if (shakeAmount > 0) {
     const sx = (Math.random() - 0.5) * shakeAmount;
     const sy = (Math.random() - 0.5) * shakeAmount;
@@ -1792,19 +1726,13 @@ function update(dt) {
 }
 
 function render() {
-  // Копируем фон
+  if (!MAP.grid) return;
   imageData.data.set(backgroundBuffer);
-  // Стены
   renderWalls(imageData.data);
-  // Спрайты
   renderSpritesIntoImageData(imageData.data);
-  // Частицы
   renderParticles(imageData.data);
-  // Вывод
   ctx.putImageData(imageData, 0, 0);
-  // Оружие
   renderWeapon();
-  // Миникарта
   renderMinimap();
 }
 
@@ -1821,8 +1749,14 @@ function updateHUD() {
 function gameLoop(now) {
   const dt = Math.min(2.5, (now - lastTime) / 16.67);
   lastTime = now;
-  update(dt);
-  render();
+  try {
+    if (gameRunning && MAP.grid) {
+      update(dt);
+      render();
+    }
+  } catch (e) {
+    console.error('Ошибка в игровом цикле:', e);
+  }
   updateHUD();
   requestAnimationFrame(gameLoop);
 }
@@ -1832,7 +1766,10 @@ function init() {
   generateTextures();
   generateSprites();
   initBackground();
-  // Меню
+  // Предгенерация карты, чтобы первый кадр уже показывал 3D
+  generateMaze(16, 16);
+  player.x = 1.5; player.y = 1.5; player.angle = 0;
+
   document.getElementById('start-btn').addEventListener('click', () => {
     initAudio();
     document.getElementById('menu').classList.add('hidden');
@@ -1846,7 +1783,7 @@ function init() {
     startNewGame();
     view.requestPointerLock();
   });
-  // Стартуем цикл
+
   lastTime = performance.now();
   requestAnimationFrame(gameLoop);
 }
