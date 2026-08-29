@@ -2689,4 +2689,204 @@ function loop(){
     if(player.onGround&&spxz>1){
       player.bob+=spxz*dt*1.7;
       player.stepAcc+=spxz*dt;
-      if(player.stepAcc>2.6){ player.stepAcc
+      if(player.stepAcc>2.6){ player.stepAcc=0; SFX.step(); }
+    }
+    if(!infinityMode&&depth>=7&&spxz<0.6&&player.onGround) whisperIdle+=dt;
+    else whisperIdle=0;
+    paral=clamp((whisperIdle-2.2)/4,0,1);
+    if(!infinityMode){
+      if(gameT-player.lastHurt>5&&player.hp<100)
+        player.hp=Math.min(100,player.hp+4.5*dt);
+      if(hasArmor()&&armor<100&&gameT-player.lastHurt>ARMOR_DELAY)
+        armor=Math.min(100,armor+ARMOR_REGEN*dt);
+    }
+
+    // --- камера ---
+    camera.position.set(player.pos.x,player.pos.y+EYE,player.pos.z);
+    camera.rotation.set(player.pitch,player.yaw,0);
+    if(shake>0.002){
+      camera.rotation.x+=rnd(-1,1)*shake*0.035;
+      camera.rotation.y+=rnd(-1,1)*shake*0.035;
+      camera.rotation.z+=rnd(-1,1)*shake*0.02;
+      shake*=Math.exp(-6*dt);
+    }
+    const baseFov=infinityMode?80:75;
+    const targetFov=baseFov+(running?5:0);
+    if(Math.abs(camera.fov-targetFov)>0.1){
+      camera.fov+=(targetFov-camera.fov)*Math.min(1,10*dt);
+      camera.updateProjectionMatrix();
+    }
+
+    // --- фонарь ---
+    if(playerLightBase>0){
+      playerLight.intensity=playerLightBase*
+        (0.93+0.05*Math.sin(gameT*6.1)+0.03*Math.sin(gameT*15.7));
+    } else playerLight.intensity=0;
+
+    // --- автоогонь АК: удержание ЛКМ ---
+    if(mouseHeld&&WEAPONS[curW].auto&&!infinityMode) tryFire();
+    // --- сенсорный огонь: удержание = автоогонь / луч ---
+    if(platform==='mobile'&&touchUI.fireHeld){
+      const fw=WEAPONS[curW];
+      if(fw.laser){ if(!touchUI.fireBlocked) laserHeld=true; }
+      else tryFire();
+    }
+
+    // --- view-model ---
+    recoil*=Math.exp(-9*dt);
+    if(switchT>0) switchT-=dt;
+    const gm=gunModels[curW], st=gunState[curW];
+    let rp=0;
+    if(st.reloading>0){
+      st.reloading-=dt;
+      const pr=1-st.reloading/WEAPONS[curW].reload;
+      rp=-Math.sin(pr*Math.PI)*0.9;
+      if(st.reloading<=0){ st.ammo=WEAPONS[curW].mag; SFX.click(); updateHUD(); }
+    }
+    const sw=switchT>0?switchT/0.4:0;
+    const amp=gm.userData.bobAmp*Math.min(1,spxz/curWalk);
+    const laserActiveNow = curW===3&&hasLaser()&&laserHeld&&(infinityMode||mod==='beam'||player.hp>LASER_MIN_HP);
+    gunRig.position.set(
+      GUN_BASE.x+Math.sin(player.bob)*amp,
+      GUN_BASE.y-Math.abs(Math.cos(player.bob))*amp*1.4-sw*0.55+rp*0.18,
+      GUN_BASE.z+recoil*0.24+(laserActiveNow?Math.sin(gameT*50)*0.004:0)
+    );
+    gunRig.rotation.set(rp+recoil*0.35,0,recoil*0.06);
+    flashLight.intensity*=Math.exp(-26*dt);
+    if(flashLight.intensity<0.02)flashLight.intensity=0;
+    boomLight.intensity*=Math.exp(-8*dt);
+
+    // --- лазер игрока ---
+    if(laserActiveNow){
+      if(!laserOn){ laserOn=true; laserSound(true); laserBeam.visible=true; laserTickT=0; }
+      laserTickT-=dt;
+      if(laserTickT<=0){ laserTickT=LASER_TICK; fireLaserTick(); }
+      if(laserOn) updateLaserBeam();
+    } else if(laserOn){ laserOff(); }
+
+    // --- рассвет: толпа не редеет ---
+    if(infinityMode){
+      infSpawnT-=dt;
+      if(enemies.length<INF_ENEMIES&&infSpawnT<=0){
+        infSpawnT=0.9;
+        const ang=rnd(0,Math.PI*2), rr=rnd(26,64);
+        const ne=spawnEnemy(player.pos.x+Math.cos(ang)*rr, player.pos.z+Math.sin(ang)*rr, 17);
+        ne.flyY=clamp(player.pos.y+rnd(-10,14),2.5,52);
+        ne.center.y=ne.flyY;
+      }
+    }
+
+    updateEnemies(dt);
+    updateRockets(dt);
+    updateParticles(dt);
+    updatePickups(dt);
+    updateMoon(dt);
+    updateDyson(dt);
+
+    // маяк
+    if(levelGroup){
+      const b=levelGroup.userData.beacon;
+      b.material.opacity=0.18+Math.sin(gameT*2.2)*0.07;
+      const r=levelGroup.userData.ring;
+      r.scale.setScalar(1+Math.sin(gameT*2.2)*0.12);
+      r.rotation.z+=dt*0.8;
+    }
+    if(levelGroup) for(const o of levelGroup.children)
+      if(o.userData.sky){ o.rotation.y+=o.userData.spin*dt; o.rotation.x+=o.userData.spin*0.4*dt; }
+    if(starfield) starfield.rotation.y+=0.005*dt;
+    if(dawnRing){
+      dawnRing.material.opacity=0.75+0.15*Math.sin(gameT*0.7);
+      dawnGlow.material.opacity=0.2+0.07*Math.sin(gameT*0.5+1);
+    }
+
+    // --- выход: три судьбы луча ---
+    const reached = Math.hypot(player.pos.x-exitPos.x,player.pos.z-exitPos.z)<1.6
+      && Math.abs(player.pos.y-exitPos.y)<2.5;
+    if(reached){
+      if(infinityMode){
+        SFX.portal();
+        showDawn();
+      } else {
+        state='transition';
+        laserOff();
+        SFX.portal();
+        const gained=score-scoreAtLevelStart;
+        score+=100*depth;
+        if(depth>=17&&echo>=ECHO_GOAL){
+          showInfinityTransition();
+          setTimeout(()=>{
+            if(state!=='transition') return;
+            buildInfinityLevel(); resetPlayer();
+            if(platform==='mobile'||locked){ state='playing'; }
+            else { state='paused'; showPause(); }
+            document.getElementById('overlay').classList.add('hidden');
+          },1900);
+        } else if(depth>=24&&gained<=LOOP_MIN){
+          showLoopTransition();
+          setTimeout(()=>{
+            if(state!=='transition') return;
+            buildLevel(depth); resetPlayer();
+            if(platform==='mobile'||locked){ state='playing'; }
+            else { state='paused'; showPause(); }
+            document.getElementById('overlay').classList.add('hidden');
+          },1700);
+        } else {
+          const nextD=depth+1;
+          depth++; bestDepth=Math.max(bestDepth,depth);
+          player.hp=Math.min(100,player.hp+35);
+          showTransition(nextD);
+          setTimeout(()=>{
+            if(state!=='transition') return;
+            buildLevel(depth); resetPlayer();
+            if(platform==='mobile'||locked){ state='playing'; }
+            else { state='paused'; showPause(); }
+            document.getElementById('overlay').classList.add('hidden');
+          },1500);
+        }
+      }
+    }
+
+    if(dmgFlash>0){ dmgFlash-=dt*2.2; $('damage').style.opacity=Math.max(0,dmgFlash); }
+    else $('damage').style.opacity=0;
+
+    if(cooldown>0) cooldown-=dt;
+    updateHUD();
+  }
+  else if(state==='transition'||state==='dead'||state==='dawn'){
+    updateParticles(dt);
+    updateDyson(dt);
+  }
+
+  /* ---------- рендер в два прохода ----------
+     1) мир · 2) depth очищается → оружие поверх стен,
+     но с честным depth-тестом между собственными деталями */
+  renderer.autoClear=true;
+  renderer.render(scene,camera);
+  renderer.autoClear=false;
+  renderer.clearDepth();
+  if(gunCamera.fov!==camera.fov){
+    gunCamera.fov=camera.fov;
+    gunCamera.updateProjectionMatrix();
+  }
+  renderer.render(gunScene,gunCamera);
+  renderer.autoClear=true;
+}
+loop();
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  gunCamera.aspect=innerWidth/innerHeight;
+  gunCamera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+addEventListener('orientationchange',()=>setTimeout(()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  gunCamera.aspect=innerWidth/innerHeight;
+  gunCamera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+},250));
+</script>
+</body>
+</html>
