@@ -372,73 +372,6 @@ const SFX = {
   dry(){ sNoise(0.05,0.2,1400,'bandpass',6); },
   shield(){ sTone(0.14,0.28,560,190,'triangle'); sNoise(0.08,0.12,3000,'highpass',1); },
   ltick(){ sNoise(0.05,0.12,700,'bandpass',2); },
-  rumble(v){ v=v||1; sNoise(1.1,0.22*v,140,'lowpass',0.);
-  // гул маяка — три гармоники, громкость по близости к выходу
-  humG=AC.createGain(); humG.gain.value=0; humG.connect(master);
-  const h1=AC.createOscillator(); h1.type='sine'; h1.frequency.value=52;
-  const h2=AC.createOscillator(); h2.type='sine'; h2.frequency.value=104.7;
-  const h2g=AC.createGain(); h2g.gain.value=0.4;
-  const h3=AC.createOscillator(); h3.type='sine'; h3.frequency.value=156.8;
-  const h3g=AC.createGain(); h3g.gain.value=0.18;
-  h1.connect(humG); h2.connect(h2g); h2g.connect(humG); h3.connect(h3g); h3g.connect(humG);
-  h1.start(); h2.start(); h3.start();
-  // тёплый пад рассвета (мажорное трезвучие, включается на бесконечном уровне)
-  const dp=AC.createGain(); dp.gain.value=0.0001; dp.connect(master);
-  [[110,0.3],[164.81,0.22],[220,0.18],[277.18,0.12]].forEach(([f,v])=>{
-    const o=AC.createOscillator(); o.type='sine'; o.frequency.value=f;
-    const og=AC.createGain(); og.gain.value=v;
-    o.connect(og); og.connect(dp); o.start();
-  });
-  Whisper.dawnG=dp;
-  initWhisperPool();
-}
-function sNoise(dur,vol,freq,type,q,delay){
-  if(!AC) return;
-  const t=AC.currentTime+(delay||0);
-  const s=AC.createBufferSource(); s.buffer=noiseBuf; s.loop=true;
-  const f=AC.createBiquadFilter(); f.type=type||'lowpass'; f.frequency.value=freq; f.Q.value=q||1;
-  const g=AC.createGain();
-  g.gain.setValueAtTime(0.0001,t);
-  g.gain.linearRampToValueAtTime(vol,t+0.004);
-  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-  s.connect(f); f.connect(g); g.connect(master);
-  s.start(t); s.stop(t+dur+0.05);
-}
-function sTone(dur,vol,f0,f1,type,delay){
-  if(!AC) return;
-  const t=AC.currentTime+(delay||0);
-  const o=AC.createOscillator(); o.type=type||'sine';
-  o.frequency.setValueAtTime(f0,t);
-  o.frequency.exponentialRampToValueAtTime(Math.max(f1,1),t+dur);
-  const g=AC.createGain();
-  g.gain.setValueAtTime(0.0001,t);
-  g.gain.linearRampToValueAtTime(vol,t+0.006);
-  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-  o.connect(g); g.connect(master);
-  o.start(t); o.stop(t+dur+0.05);
-}
-const SFX = {
-  rev(){ sNoise(0.16,0.5,2200,'bandpass',0.6); sTone(0.16,0.3,170,55,'triangle'); },
-  shotgun(){ sNoise(0.32,0.75,950,'lowpass',0.8); sTone(0.28,0.45,110,32,'triangle'); sNoise(0.1,0.3,3000,'highpass',1); },
-  rocket(){ sNoise(0.45,0.5,650,'lowpass',1); sTone(0.4,0.25,320,70,'sawtooth'); },
-  boom(){ sNoise(0.9,0.9,380,'lowpass',0.7); sTone(0.7,0.6,95,26,'sine'); sNoise(0.25,0.4,2000,'highpass',1,0.03); },
-  zap(v){ sTone(0.18,v||0.3,300,58,'sawtooth'); sNoise(0.16,(v||0.3)*0.6,1500,'lowpass',1); },
-  zapTank(v){ v=v||0.45;
-    sTone(0.36,v,80,24,'sawtooth'); sTone(0.36,v*0.8,40,16,'sine');
-    sNoise(0.3,v*0.35,500,'lowpass',1); },
-  mgun(v){ v=v||0.2;
-    sTone(0.07,v,240,90,'sawtooth'); sNoise(0.05,v*0.5,2500,'bandpass',2); },
-  hit(){ sTone(0.05,0.22,950,700,'square'); },
-  hurt(){ sTone(0.28,0.4,130,60,'sawtooth'); sNoise(0.2,0.3,500,'lowpass',1); },
-  kill(){ sTone(0.2,0.3,300,90,'triangle'); sNoise(0.25,0.35,900,'bandpass',1.5); },
-  click(){ sNoise(0.04,0.25,2600,'bandpass',4); },
-  reload(){ sNoise(0.05,0.3,2400,'bandpass',5); sNoise(0.06,0.3,1800,'bandpass',5,0.28); },
-  step(){ sNoise(0.06,0.09,420,'lowpass',1); },
-  pickup(){ sTone(0.18,0.25,620,1240,'sine'); sTone(0.18,0.12,930,1860,'sine',0.02); },
-  portal(){ sTone(0.7,0.3,240,960,'sine'); sTone(0.7,0.15,360,1440,'sine',0.1); },
-  dry(){ sNoise(0.05,0.2,1400,'bandpass',6); },
-  shield(){ sTone(0.14,0.28,560,190,'triangle'); sNoise(0.08,0.12,3000,'highpass',1); },
-  ltick(){ sNoise(0.05,0.12,700,'bandpass',2); },
   rumble(v){ v=v||1; sNoise(1.1,0.22*v,140,'lowpass',0.6); sTone(0.9,0.15*v,55,26,'sine'); },
   thud(v){ v=v||1; sNoise(0.22,0.5*v,210,'lowpass',0.8); sTone(0.18,0.42*v,75,30,'sine'); },
 };
@@ -492,9 +425,7 @@ function moonSound(on){
   }
 }
 
-// ---------- ШЁПОТ: синтез речи без голоса ----------
-// шум → слоговые огибающие → формантные фильтры = шёпот
-// реверс буфера = «человек говорит задом наперёд»
+// ---------- ШЁПОТ ----------
 function makeWhisperBuffer(dur){
   const sr=AC.sampleRate, n=Math.floor(sr*dur);
   const buf=AC.createBuffer(1,n,sr), d=buf.getChannelData(0);
@@ -544,7 +475,6 @@ function panFor(x,z){
   const cy=Math.cos(player.yaw), sy=Math.sin(player.yaw);
   return clamp((dx*cy-dz*sy)/d,-1,1);
 }
-// короткий шёпот из точки мира — телеграф угрозы
 function burstWhisper(x,z,hi,vol){
   if(!AC||infinityMode||depth<7||state!=='playing') return;
   const poolArr=Whisper.rev?Whisper.poolRev:Whisper.pool;
@@ -564,7 +494,6 @@ function burstWhisper(x,z,hi,vol){
   g.gain.setTargetAtTime(0.0001,t+b.duration*0.7,0.15);
   src.start(t); src.stop(t+b.duration+0.1);
 }
-// пересборка голосов под текущую глубину
 function rebuildWhispers(){
   if(!AC) return;
   Whisper.crowd.forEach(v=>{try{v.chain.src.stop();}catch(e){}});
@@ -577,7 +506,7 @@ function rebuildWhispers(){
     else if(depth>=7) n=1;
   }
   Whisper.n=n; Whisper.rev=rev;
-  const forms=[[340,1050],[430,1320],[300,950]]; // низкие — «толпа»
+  const forms=[[340,1050],[430,1320],[300,950]];
   for(let i=0;i<n;i++){
     const f=forms[i%3];
     const buf=makeWhisperBuffer(rnd(5,9));
@@ -587,7 +516,6 @@ function rebuildWhispers(){
       vol:rnd(0.04,0.06),formT:rnd(0.5,2)});
   }
   if(depth>=7&&!infinityMode){
-    // детский голос — только для паралича сна, высокие форманты
     const buf=makeWhisperBuffer(rnd(6,10));
     Whisper.child=voiceChain(rev?reverseBuffer(buf):buf,650,2250,0);
   }
@@ -612,7 +540,7 @@ function updateWhispers(dt){
     }
     v.panA+=v.panSpd*dt;
     let p=Math.sin(v.panA)*0.85;
-    if(paral>0) p*=(1-paral*0.7); // паралич сжимает толпу к затылку
+    if(paral>0) p*=(1-paral*0.7);
     v.chain.pan.pan.setTargetAtTime(p,AC.currentTime,0.15);
     v.formT-=dt;
     if(v.formT<=0){
@@ -735,13 +663,12 @@ function applyAtmosphere(d){
     `radial-gradient(ellipse at center, transparent ${62-18*NIGHT}%, rgba(8,7,10,${0.42+0.25*NIGHT}) 100%)`;
 }
 function applyInfinityAtmosphere(){
-  // рассвет: тёмное небо сверху, тепло от горизонта снизу
   scene.background = new THREE.Color(0x0a0d1a);
   scene.fog.color.set(0x0a0d1a);
   scene.fog.near = 40; scene.fog.far = 170;
   hemiLight.intensity = 0.8;
   hemiLight.color.set(0x6a7aa8);
-  hemiLight.groundColor.set(0xff9a5a); // свет рассвета идёт от земли
+  hemiLight.groundColor.set(0xff9a5a);
   sunLight.intensity = 0.15;
   sunLight.color.set(0xffb37a);
   wallMat.color.setScalar(1);
@@ -760,12 +687,14 @@ let gameT=0, starfield=null, wallAnim=[], lastInstab='';
 let armor=0, armorFlash=0;
 let moonState=null;
 let shiftSeq=0, shiftSeqT=0, levelSelectOpen=false;
-// экономика и рассвет
 let infinityMode=false, echo=0, scoreAtLevelStart=0;
 let platforms=[], dawnRing=null, dawnGlow=null;
-let infSpawnT=0;           // таймер пополнения толпы на рассвете
-// текущая физика (меняется на рассвете)
+let infSpawnT=0;
 let curGrav=GRAV, curJump=JUMP, curWalk=WALK, curRun=RUN;
+// платформа и сенсорный ввод
+let platform='pc';
+const touchUI={lookId:null,moveId:null,moveX:0,moveY:0,
+  fireHeld:false,jumpHeld:false,fireBlocked:false};
 
 const hasLaser = ()=>depth>=15||infinityMode;
 const hasArmor = ()=>depth>=16&&!infinityMode;
@@ -901,28 +830,35 @@ function depthFlavor(d){
   if(d>=2) return NIGHT_QUOTES[rndi(0,NIGHT_QUOTES.length-1)];
   return QUOTES[rndi(0,QUOTES.length-1)];
 }
+const tapWord=()=>platform==='mobile'?'коснись':'щёлкни';
 
 function showIntro(){
+  const touchable=('ontouchstart' in window)||navigator.maxTouchPoints>0;
   overlayShow(`
     <h1>БЕССОН<em>НИЦА</em></h1>
     <div class="sub">шутер про лабиринт, из которого не выходят</div>
-    <div class="ctrl">
-      <b>WASD / мышь</b> движение и обзор<br>
-      <b>ЛКМ</b> огонь (удержание = луч) &nbsp;·&nbsp; <b>R</b> перезарядка<br>
-      <b>1–4 / колесо</b> револьвер · двухстволка · ракетница · лазер<br>
-      <b>SHIFT / SPACE</b> бег / прыжок
+    <div class="plat-row">
+      <button class="plat-btn" data-plat="pc">
+        <b>ПК</b>
+        <span>wasd · мышь · лкм · 1–4 · r</span>
+        ${touchable?'':'<i>рекомендуется</i>'}
+      </button>
+      <button class="plat-btn" data-plat="mobile">
+        <b>МОБИЛЬНОЕ</b>
+        <span>стик · кнопки · автоогонь</span>
+        ${touchable?'<i>рекомендуется</i>':''}
+      </button>
     </div>
-    <div class="quote">с седьмой глубины — шёпот · с десятой просыпаются стены<br>
-    на семнадцатой — красная луна · собери 2300 эха сна — увидишь рассвет<br>
-    с двадцать четвёртой лень наказывается: меньше 50 очков — сон повторится<br>
-    на рассвете нет смерти. только шаги по небу и путь обратно.</div>
-    <div class="go">[ щёлкни, чтобы уснуть ]</div>`);
+    <div class="quote">небо темнеет с каждой глубиной · после седьмой — ночь и шёпот<br>
+    на семнадцатой — красная луна · 2300 эха сна открывают рассвет<br>
+    на рассвете нет смерти — только шаги по небу и путь обратно</div>`);
 }
 function showPause(){
   levelSelectOpen=false; shiftSeq=0;
   overlayShow(`<h1>ПАУЗА</h1><div class="sub">сон ждёт</div>
     <div class="quote">фигуры стоят неподвижно. пока что.</div>
-    <div class="go">[ щёлкни, чтобы вернуться ]</div>`);
+    <div class="go">[ ${tapWord()}, чтобы вернуться ]</div>
+    <div class="menu-link">[ в титул · сменить платформу ]</div>`);
   document.body.classList.remove('playing');
 }
 function showDeath(){
@@ -931,7 +867,7 @@ function showDeath(){
     <div class="stat">глубина <b>${String(depth).padStart(2,'0')}</b> · счёт <b>${score}</b> · уничтожено <b>${kills}</b><br>
     пробуждений <b>${deaths+1}</b> · лучшая глубина <b>${String(bestDepth).padStart(2,'0')}</b></div>
     <div class="quote">${depthFlavor(depth)}<br>смерть возвращает в начало глубины. лабиринт уже другой.</div>
-    <div class="go">[ щёлкни, чтобы проснуться на глубине ${String(depth).padStart(2,'0')} ]</div>`);
+    <div class="go">[ ${tapWord()}, чтобы проснуться на глубине ${String(depth).padStart(2,'0')} ]</div>`);
   document.body.classList.remove('playing');
 }
 function showTransition(nextD){
@@ -960,7 +896,7 @@ function showDawn(){
   state='dawn';
   bestDepth=Math.max(bestDepth,depth);
   laserOff(); moonSound(false);
-  document.exitPointerLock();
+  document.exitPointerLock&&document.exitPointerLock();
   document.body.classList.remove('playing');
   overlayShow(`
     <h1>РАССВЕТ<br><em>ДОСТИГНУТ</em></h1>
@@ -982,25 +918,81 @@ function showLevelSelect(){
     <div class="lvl-grid">${btns}</div>
     <div class="quote">числа — это слои. чем больше, тем хуже тебе.<br>
     ∞ — рассвет: бессмертие, бесплатный луч и вечная толпа в небе<br>
-    [ esc или клик мимо кнопок — назад ]</div>`);
+    ${platform==='mobile'?'[ тап мимо кнопок — назад ]':'[ esc или клик мимо кнопок — назад ]'}</div>`);
+}
+
+// запуск/возврат в игру с учётом платформы
+function startPlaying(){
+  state='playing';
+  overlay.classList.add('hidden');
+  document.body.classList.add('playing');
+  shiftSeq=0; levelSelectOpen=false;
+}
+function resumeGame(){
+  if(platform==='pc'){ pendingState='playing'; cv.requestPointerLock(); }
+  else startPlaying();
+}
+function choosePlatform(p){
+  platform=p;
+  initAudio();
+  document.body.classList.toggle('touch', p==='mobile');
+  if(p==='mobile'){
+    try{ renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); }catch(err){}
+    renderer.setSize(innerWidth,innerHeight);
+    try{
+      if(document.documentElement.requestFullscreen)
+        document.documentElement.requestFullscreen().catch(()=>{});
+    }catch(err){}
+    try{
+      if(screen.orientation&&screen.orientation.lock)
+        screen.orientation.lock('landscape').catch(()=>{});
+    }catch(err){}
+  } else {
+    try{ renderer.setPixelRatio(Math.min(devicePixelRatio,2)); }catch(err){}
+    renderer.setSize(innerWidth,innerHeight);
+  }
+  score=0; kills=0; deaths=0; echo=0; infinityMode=false; depth=1;
+  buildLevel(1); resetPlayer();
+  resumeGame();
 }
 
 document.getElementById('overlay').addEventListener('click',e=>{
   initAudio();
+  // выбор платформы на титуле
+  const plat=e.target.closest('.plat-btn');
+  if(plat&&state==='menu'){
+    choosePlatform(plat.dataset.plat);
+    return;
+  }
+  // выбор глубины из секретного меню
   const btn=e.target.closest('.lvl-btn');
   if(btn&&(state==='paused'||state==='menu')){
     levelSelectOpen=false; shiftSeq=0;
     score=0; kills=0; deaths=0; echo=0;
     if(btn.dataset.inf){
-      // сразу на рассвет
       buildInfinityLevel(); resetPlayer();
     } else {
       infinityMode=false;
       depth=parseInt(btn.dataset.depth,10);
       buildLevel(depth); resetPlayer();
     }
-    pendingState='playing';
-    cv.requestPointerLock();
+    resumeGame();
+    return;
+  }
+  // мобильный секрет: 5 тапов по заголовку
+  if(platform==='mobile'&&e.target.closest('h1')&&(state==='paused'||state==='menu')&&!levelSelectOpen){
+    const now=performance.now();
+    if(now-shiftSeqT>1600) shiftSeq=0;
+    shiftSeqT=now;
+    if(++shiftSeq>=5){ shiftSeq=0; showLevelSelect(); }
+    return;
+  }
+  // выход в титул (смена платформы)
+  if(e.target.closest('.menu-link')&&state==='paused'){
+    state='menu';
+    laserOff(); moonSound(false);
+    enemies.forEach(en=>chargeSound(false,en));
+    showIntro();
     return;
   }
   if(levelSelectOpen){
@@ -1009,24 +1001,18 @@ document.getElementById('overlay').addEventListener('click',e=>{
     return;
   }
   if(state==='menu'){
-    score=0; kills=0; deaths=0; echo=0; infinityMode=false; depth=1;
-    buildLevel(depth); resetPlayer();
-    pendingState='playing';
-    cv.requestPointerLock();
+    // на титуле игра начинается только выбором платформы
+    return;
   } else if(state==='dead'){
     deaths++;
     buildLevel(depth); resetPlayer();
-    pendingState='playing';
-    cv.requestPointerLock();
+    resumeGame();
   } else if(state==='dawn'){
-    // полный цикл: рассвет возвращает в самый первый сон
     infinityMode=false; echo=0; score=0; kills=0; deaths=0; depth=1;
     buildLevel(1); resetPlayer();
-    pendingState='playing';
-    cv.requestPointerLock();
+    resumeGame();
   } else if(state==='paused'){
-    pendingState='playing';
-    cv.requestPointerLock();
+    resumeGame();
   }
 });
 showIntro();
@@ -1061,7 +1047,7 @@ function generateMaze(n){
   return {grid:g,W,H};
 }
 function isSolid(gx,gz){
-  if(infinityMode) return false; // рассвет — открытый мир
+  if(infinityMode) return false;
   if(!maze||gx<0||gz<0||gx>=maze.W||gz>=maze.H) return true;
   return maze.grid[gz][gx]===1;
 }
@@ -1141,11 +1127,7 @@ function disposeLevel(){
   scene.remove(levelGroup);
   levelGroup=null;
 }
-
-function buildLevel(d){
-  disposeLevel();
-  infinityMode=false;
-  curGrav=GRAV; curJump=JUMP; curWalk=WALK; curRun=RUN;
+function clearEnemiesAndFx(){
   enemies.forEach(e=>chargeSound(false,e)); enemies.length=0;
   rockets.length=0; pickups.length=0;
   for(let i=particles.length-1;i>=0;i--) killParticle(i);
@@ -1161,6 +1143,13 @@ function buildLevel(d){
     });
     eGroup.remove(ch);
   }
+}
+
+function buildLevel(d){
+  disposeLevel();
+  infinityMode=false;
+  curGrav=GRAV; curJump=JUMP; curWalk=WALK; curRun=RUN;
+  clearEnemiesAndFx();
   starfield=null; wallAnim=[];
   scoreAtLevelStart=score;
 
@@ -1262,7 +1251,6 @@ function buildLevel(d){
     levelGroup.add(starfield);
   }
 
-  // красная луна (17+)
   if(d>=17){
     const disc=new THREE.Mesh(new THREE.CircleGeometry(26,48),
       new THREE.MeshBasicMaterial({color:0xff1e08,fog:false}));
@@ -1286,7 +1274,6 @@ function buildLevel(d){
     setTimeout(()=>{ if(state==='playing'&&depth>=17) SFX.rumble(1.5); },600);
   }
 
-  // живые/падающие стены
   const interior=[];
   cells.forEach(([x,z],i)=>{
     if(x>0&&z>0&&x<maze.W-1&&z<maze.H-1) interior.push(i);
@@ -1315,7 +1302,6 @@ function buildLevel(d){
     }
   }
 
-  // враги
   const spawnCells=[];
   for(let z=1;z<maze.H-1;z++)for(let x=1;x<maze.W-1;x++)
     if(maze.grid[z][x]===0&&distMap[z][x]>=6&&!(x===far[0]&&z===far[1])) spawnCells.push([x,z]);
@@ -1327,7 +1313,7 @@ function buildLevel(d){
   }
 }
 
-// ---------- уровень «РАССВЕТ» (бесконечный) ----------
+// ---------- уровень «РАССВЕТ» ----------
 const PLAT_SHAPES={
   box:{geo:new THREE.BoxGeometry(1,1,1),       top:0.5,  foot:0.75},
   cyl:{geo:new THREE.CylinderGeometry(0.62,0.62,1,6), top:0.5, foot:0.72},
@@ -1352,31 +1338,16 @@ function buildInfinityLevel(){
   infinityMode=true;
   curGrav=INF_GRAV; curJump=INF_JUMP; curWalk=INF_WALK; curRun=INF_RUN;
   maze=null; wallMesh=null; wallAnim=[]; starfield=null;
-  enemies.forEach(e=>chargeSound(false,e)); enemies.length=0;
-  rockets.length=0; pickups.length=0;
-  for(let i=particles.length-1;i>=0;i--) killParticle(i);
-  while(eGroup.children.length){
-    const ch=eGroup.children[0];
-    ch.traverse(o=>{
-      if(o.geometry){
-        let shared=false;
-        for(const k in ETYPES) if(ETYPES[k].geo===o.geometry){ shared=true; break; }
-        if(!shared) o.geometry.dispose();
-      }
-      if(o.material) o.material.dispose();
-    });
-    eGroup.remove(ch);
-  }
+  clearEnemiesAndFx();
   scoreAtLevelStart=score;
   infSpawnT=0;
 
   applyInfinityAtmosphere();
   setAudioMood(true);
-  rebuildWhispers(); // тишина: n=0
+  rebuildWhispers();
 
   levelGroup=new THREE.Group(); scene.add(levelGroup);
 
-  // бесконечная шахматная равнина
   const floor=new THREE.Mesh(new THREE.PlaneGeometry(600,600), floorMat.clone());
   floor.material.map=checkerTex.clone();
   floor.material.map.needsUpdate=true;
@@ -1384,7 +1355,6 @@ function buildInfinityLevel(){
   floor.rotation.x=-Math.PI/2;
   levelGroup.add(floor);
 
-  // тонкая полоса рассвета по всему горизонту + мягкое сияние под ней
   dawnRing=new THREE.Mesh(new THREE.RingGeometry(240,246,96),
     new THREE.MeshBasicMaterial({color:0xffb37a,transparent:true,opacity:0.85,fog:false,
       side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
@@ -1398,7 +1368,6 @@ function buildInfinityLevel(){
   dawnGlow.position.set(0,20,0);
   levelGroup.add(dawnGlow);
 
-  // остатки ночи — редкие тусклые звёзды
   const cnt=140;
   const pos=new Float32Array(cnt*3);
   for(let i=0;i<cnt;i++){
@@ -1413,7 +1382,6 @@ function buildInfinityLevel(){
     size:1.4,sizeAttenuation:false,transparent:true,opacity:0.3,fog:false}));
   levelGroup.add(starfield);
 
-  // дальние каркасные гиганты — декорация вращается
   const skyGeos=[new THREE.IcosahedronGeometry(1,1),new THREE.TorusGeometry(1,0.3,8,26),
     new THREE.OctahedronGeometry(1,0),new THREE.TorusKnotGeometry(1,0.25,60,10)];
   for(let i=0;i<10;i++){
@@ -1429,7 +1397,6 @@ function buildInfinityLevel(){
     levelGroup.add(mesh);
   }
 
-  // лестница фигур в небо — спираль к маяку
   let a=rnd(0,6.28), rad=16, x=0, z=0, y=3;
   const types=['box','cyl','ico','box','octa','cyl'];
   for(let i=0;i<14;i++){
@@ -1438,7 +1405,6 @@ function buildInfinityLevel(){
     x=Math.cos(a)*rad; z=Math.sin(a)*rad; y+=rnd(3.4,4.4);
     addPlatform(x,y,z,types[i%types.length],rnd(2.2,3));
   }
-  // вершина — широкая площадка с маяком
   y+=rnd(3.6,4.2);
   addPlatform(x,y,z,'cyl',6);
   exitPos.set(x,y+PLAT_SHAPES.cyl.top*6,z);
@@ -1460,15 +1426,12 @@ function buildInfinityLevel(){
   levelGroup.add(beaconLight);
   levelGroup.userData={beacon,ring};
 
-  // парящие фигуры для прогулок
   for(let i=0;i<24;i++){
     const ang=rnd(0,6.28), rr=rnd(20,85);
     addPlatform(Math.cos(ang)*rr, rnd(4,42), Math.sin(ang)*rr,
       types[rndi(0,types.length-1)], rnd(2,3.4));
   }
 
-  // карнавал: вечная толпа фигур — стреляют в бессмертного, он отвечает лучом
-  // (высота разлёта 3–44: и у земли, и вдоль всей спирали)
   for(let i=0;i<INF_ENEMIES;i++){
     const ang=rnd(0,6.28), rr=rnd(16,70);
     spawnEnemy(Math.cos(ang)*rr,Math.sin(ang)*rr,17);
@@ -1487,6 +1450,7 @@ function resetPlayer(){
   player.hp=100; player.pitch=0;
   gunState.forEach(s=>{s.ammo=WEAPONS[s.w].mag; s.reloading=0;});
   curW=infinityMode?3:0; switchT=0.35; cooldown=0; laserOff();
+  touchUI.fireHeld=false; touchUI.jumpHeld=false; touchUI.fireBlocked=false;
   gunModels.forEach((m,j)=>m.visible=j===curW);
   armor = hasArmor() ? 100 : 0;
   const hint=document.getElementById('hint');
@@ -1494,7 +1458,7 @@ function resetPlayer(){
     infinityMode ? 'бессмертие. толпа ждёт. прыгай по фигурам к свету — он вернёт тебя в первый сон' :
     depth>=17 ? `луна красная. эхо сна ${echo}/${ECHO_GOAL} — рассвет ждёт` :
     depth>=16 ? 'синие кольца защищают. пока вращаются' :
-    depth>=15 ? 'нажми [4] — лазер. каждая секунда стоит здоровья' :
+    depth>=15 ? 'лазер — кнопка [4]. каждая секунда стоит здоровья' :
     depth>=11 ? 'лабиринт перестраивается — не доверяй стенам' :
     depth===10 ? 'стены дышат. пока просто дышат' :
     depth>=7 ? 'ночь. шёпот. не стой на месте слишком долго' :
@@ -1709,7 +1673,6 @@ function spawnEnemy(x,z,d){
   eGroup.add(mesh);
   const e={type:t,mesh,aim,beam,center:new THREE.Vector3(x,1.6,z),
     hp:t.hp*(1+(d-1)*0.06), r:t.r,
-    // на рассвете фигуры разлетаются по всей высоте — от земли до вершины спирали
     flyY:infinityMode?rnd(3,44):1.6,
     state:'hunt', atkT:rnd(1.2,3.5), chargeT:0, beamT:0, loseT:0,
     burstLeft:0, burstT:0,
@@ -1741,7 +1704,7 @@ function killEnemy(e){
   eGroup.remove(e.mesh);
   enemies.splice(enemies.indexOf(e),1);
   kills++; score+=e.type.score;
-  if(depth>=17&&!infinityMode) echo+=e.type.score; // эхо сна
+  if(depth>=17&&!infinityMode) echo+=e.type.score;
   SFX.kill();
   for(let i=0;i<14;i++){
     const v=new THREE.Vector3(rnd(-4,4),rnd(1,6),rnd(-4,4));
@@ -1945,7 +1908,7 @@ function updateDyson(dt){
 
 // ---------- урон ----------
 function damagePlayer(dmg,pierce){
-  if(state!=='playing'||infinityMode) return; // рассвет: боли больше нет
+  if(state!=='playing'||infinityMode) return;
   if(hasArmor()&&!pierce&&armor>0){
     const ab=Math.min(armor,dmg);
     armor-=ab; dmg-=ab;
@@ -1964,7 +1927,7 @@ function die(){
   bestDepth=Math.max(bestDepth,depth);
   enemies.forEach(e=>chargeSound(false,e));
   laserOff(); moonSound(false);
-  document.exitPointerLock();
+  document.exitPointerLock&&document.exitPointerLock();
   showDeath();
 }
 
@@ -2071,8 +2034,9 @@ function laserOff(){
 function switchWeapon(i){
   if(i===curW||switchT>0) return;
   if(i===3&&!hasLaser()) return;
-  if(infinityMode&&i!==3) return; // на рассвете в руках только луч
+  if(infinityMode&&i!==3) return;
   laserOff();
+  touchUI.fireBlocked=false;
   gunState[curW].reloading=0;
   curW=i; switchT=0.4; cooldown=0;
   gunModels.forEach((m,j)=>m.visible=j===i);
@@ -2137,7 +2101,10 @@ function hitscan(o,d,dmg){
   else if(bt<maxD) sparks(hitP,3,0x2a241c);
 }
 function fireLaserTick(){
-  if(!infinityMode&&player.hp<=LASER_MIN_HP){ laserOff(); SFX.dry(); return; }
+  if(!infinityMode&&player.hp<=LASER_MIN_HP){
+    touchUI.fireBlocked=true;   // тач: луч не включится сам, пока не отпустишь
+    laserOff(); SFX.dry(); return;
+  }
   const o=camera.position.clone();
   const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
   const wallD=castWall3D(o,d,200);
@@ -2149,7 +2116,7 @@ function fireLaserTick(){
   }
   const end=o.clone().addScaledVector(d,wallD);
   sparks(end,killed>0?4:2,0xff2b17);
-  if(!infinityMode){ player.hp-=LASER_COST; player.lastHurt=gameT; } // на рассвете луч бесплатен
+  if(!infinityMode){ player.hp-=LASER_COST; player.lastHurt=gameT; }
   SFX.ltick();
   updateHUD();
 }
@@ -2349,6 +2316,15 @@ function updateHUD(){
     const el=$('ui-instab');
     el.innerHTML=it; el.style.display=it?'block':'none';
   }
+  // кнопки оружия на таче
+  if(platform==='mobile'){
+    for(let i=0;i<4;i++){
+      const el=$('t-w'+(i+1));
+      const show=(i<3&&!infinityMode)||(i===3&&hasLaser());
+      el.style.display=show?'flex':'none';
+      el.classList.toggle('sel',curW===i);
+    }
+  }
 }
 
 // ---------- гул маяка ----------
@@ -2368,6 +2344,129 @@ function updateBeaconHum(dt){
   humG.gain.setTargetAtTime(target,AC.currentTime,0.1);
 }
 
+// ---------- сенсорное управление ----------
+function knobTo(base,knob,cx,cy){
+  const r=base.getBoundingClientRect();
+  let dx=cx-(r.left+r.width/2), dy=cy-(r.top+r.height/2);
+  const max=r.width/2-30;
+  const d=Math.hypot(dx,dy);
+  if(d>max){ dx=dx/d*max; dy=dy/d*max; }
+  knob.style.transform=`translate(${dx}px,${dy}px)`;
+}
+(function setupTouch(){
+  const lookEl=$('t-look'), moveEl=$('t-move');
+  const kl=$('t-knob-l'), km=$('t-knob-m');
+  let lx=0, ly=0;
+
+  // стикпад обзора: движение пальца = поворот камеры
+  lookEl.addEventListener('pointerdown',e=>{
+    if(touchUI.lookId!==null) return;
+    touchUI.lookId=e.pointerId; lx=e.clientX; ly=e.clientY;
+    try{lookEl.setPointerCapture(e.pointerId);}catch(err){}
+    knobTo(lookEl,kl,e.clientX,e.clientY);
+    e.preventDefault();
+  });
+  lookEl.addEventListener('pointermove',e=>{
+    if(e.pointerId!==touchUI.lookId) return;
+    const dx=e.clientX-lx, dy=e.clientY-ly;
+    lx=e.clientX; ly=e.clientY;
+    if(state==='playing'){
+      player.yaw-=dx*TOUCH_SENS;
+      player.pitch=clamp(player.pitch-dy*TOUCH_SENS,-1.5,1.5);
+    }
+    knobTo(lookEl,kl,e.clientX,e.clientY);
+  });
+  const lookEnd=e=>{
+    if(e.pointerId===touchUI.lookId){
+      touchUI.lookId=null; kl.style.transform='';
+    }
+  };
+  lookEl.addEventListener('pointerup',lookEnd);
+  lookEl.addEventListener('pointercancel',lookEnd);
+
+  // кнопка вперёд/назад: верхняя половина — вперёд, нижняя — назад
+  // (смещение вбок даёт стрейф — без него лучи не отпарируешь)
+  function setMove(cx,cy){
+    const r=moveEl.getBoundingClientRect();
+    let dx=(cx-(r.left+r.width/2))/(r.width/2);
+    let dy=(cy-(r.top+r.height/2))/(r.height/2);
+    const d=Math.hypot(dx,dy);
+    if(d>1){ dx/=d; dy/=d; }
+    const dz=0.16, m=Math.hypot(dx,dy);
+    if(m<dz){ dx=0; dy=0; }
+    else{
+      const sc=(m-dz)/(1-dz);
+      dx=dx/m*sc; dy=dy/m*sc;
+    }
+    touchUI.moveX=dx; touchUI.moveY=-dy;
+    knobTo(moveEl,km,cx,cy);
+  }
+  moveEl.addEventListener('pointerdown',e=>{
+    if(touchUI.moveId!==null) return;
+    touchUI.moveId=e.pointerId;
+    try{moveEl.setPointerCapture(e.pointerId);}catch(err){}
+    setMove(e.clientX,e.clientY);
+    e.preventDefault();
+  });
+  moveEl.addEventListener('pointermove',e=>{
+    if(e.pointerId===touchUI.moveId) setMove(e.clientX,e.clientY);
+  });
+  const moveEnd=e=>{
+    if(e.pointerId===touchUI.moveId){
+      touchUI.moveId=null; touchUI.moveX=0; touchUI.moveY=0;
+      km.style.transform='';
+    }
+  };
+  moveEl.addEventListener('pointerup',moveEnd);
+  moveEl.addEventListener('pointercancel',moveEnd);
+
+  // огонь: удержание = автоогонь (лазер — непрерывный луч)
+  const fire=$('t-fire');
+  fire.addEventListener('pointerdown',e=>{
+    touchUI.fireHeld=true; touchUI.fireBlocked=false;
+    fire.classList.add('on');
+    try{fire.setPointerCapture(e.pointerId);}catch(err){}
+    e.preventDefault();
+  });
+  const fireEnd=()=>{
+    touchUI.fireHeld=false; touchUI.fireBlocked=false; laserHeld=false;
+    fire.classList.remove('on');
+  };
+  fire.addEventListener('pointerup',fireEnd);
+  fire.addEventListener('pointercancel',fireEnd);
+
+  // прыжок
+  const jump=$('t-jump');
+  jump.addEventListener('pointerdown',e=>{
+    touchUI.jumpHeld=true;
+    try{jump.setPointerCapture(e.pointerId);}catch(err){}
+    e.preventDefault();
+  });
+  jump.addEventListener('pointerup',()=>touchUI.jumpHeld=false);
+  jump.addEventListener('pointercancel',()=>touchUI.jumpHeld=false);
+
+  // пауза / перезарядка / оружие
+  $('t-pause').addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    if(state==='playing'){
+      state='paused'; showPause(); laserOff(); moonSound(false);
+    }
+  });
+  $('t-reload').addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    if(state==='playing') startReload();
+  });
+  for(let i=0;i<4;i++){
+    $('t-w'+(i+1)).addEventListener('pointerdown',e=>{
+      e.preventDefault();
+      if(state==='playing') switchWeapon(i);
+    });
+  }
+})();
+addEventListener('contextmenu',e=>{ if(platform==='mobile') e.preventDefault(); });
+document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
+document.addEventListener('gesturestart',e=>e.preventDefault());
+
 // ---------- главный цикл ----------
 const clock=new THREE.Clock();
 function loop(){
@@ -2382,13 +2481,15 @@ function loop(){
   if(state==='playing'){
     gameT+=dt;
 
-    // --- движение ---
+    // --- движение: клавиатура + сенсорный пад ---
     let f=0,s=0;
     if(keys['KeyW']||keys['ArrowUp'])f++;
     if(keys['KeyS']||keys['ArrowDown'])f--;
     if(keys['KeyD']||keys['ArrowRight'])s++;
     if(keys['KeyA']||keys['ArrowLeft'])s--;
-    const running=(keys['ShiftLeft']||keys['ShiftRight'])&&f>0;
+    f+=touchUI.moveY; s+=touchUI.moveX;
+    const running=((keys['ShiftLeft']||keys['ShiftRight'])&&f>0)
+      ||(platform==='mobile'&&touchUI.moveY>0.92);
     const speed=running?curRun:curWalk;
     const sy=Math.sin(player.yaw),cy=Math.cos(player.yaw);
     let wx=(-sy*f+cy*s), wz=(-cy*f-sy*s);
@@ -2396,7 +2497,9 @@ function loop(){
     const k=1-Math.exp(-11*dt);
     player.vel.x+=(wx*speed-player.vel.x)*k;
     player.vel.z+=(wz*speed-player.vel.z)*k;
-    if(keys['Space']&&player.onGround){ player.vel.y=curJump; player.onGround=false; }
+    if((keys['Space']||touchUI.jumpHeld)&&player.onGround){
+      player.vel.y=curJump; player.onGround=false;
+    }
     player.vel.y-=curGrav*dt;
     moveMC(player.pos,player.vel.x*dt,player.vel.z*dt,PLAYER_R);
     player.pos.y+=player.vel.y*dt;
@@ -2423,11 +2526,9 @@ function loop(){
       player.stepAcc+=spxz*dt;
       if(player.stepAcc>2.6){ player.stepAcc=0; SFX.step(); }
     }
-    // паралич сна: стоишь — шёпот подступает
     if(!infinityMode&&depth>=7&&spxz<0.6&&player.onGround) whisperIdle+=dt;
     else whisperIdle=0;
     paral=clamp((whisperIdle-2.2)/4,0,1);
-    // регенерация
     if(!infinityMode){
       if(gameT-player.lastHurt>5&&player.hp<100)
         player.hp=Math.min(100,player.hp+4.5*dt);
@@ -2456,6 +2557,13 @@ function loop(){
       playerLight.intensity=playerLightBase*
         (0.93+0.05*Math.sin(gameT*6.1)+0.03*Math.sin(gameT*15.7));
     } else playerLight.intensity=0;
+
+    // --- сенсорный огонь: удержание = автоогонь / луч ---
+    if(platform==='mobile'&&touchUI.fireHeld){
+      const fw=WEAPONS[curW];
+      if(fw.laser){ if(!touchUI.fireBlocked) laserHeld=true; }
+      else tryFire();
+    }
 
     // --- view-model ---
     recoil*=Math.exp(-9*dt);
@@ -2490,8 +2598,6 @@ function loop(){
     } else if(laserOn){ laserOff(); }
 
     // --- рассвет: толпа не редеет ---
-    // павших сменяют новые — и появляются на высоте игрока, чтобы
-    // бой шёл вдоль всей спирали, а не только у земли
     if(infinityMode){
       infSpawnT-=dt;
       if(enemies.length<INF_ENEMIES&&infSpawnT<=0){
@@ -2521,7 +2627,6 @@ function loop(){
     if(levelGroup) for(const o of levelGroup.children)
       if(o.userData.sky){ o.rotation.y+=o.userData.spin*dt; o.rotation.x+=o.userData.spin*0.4*dt; }
     if(starfield) starfield.rotation.y+=0.005*dt;
-    // полоса рассвета дышит
     if(dawnRing){
       dawnRing.material.opacity=0.75+0.15*Math.sin(gameT*0.7);
       dawnGlow.material.opacity=0.2+0.07*Math.sin(gameT*0.5+1);
@@ -2532,7 +2637,6 @@ function loop(){
       && Math.abs(player.pos.y-exitPos.y)<2.5;
     if(reached){
       if(infinityMode){
-        // рассвет достигнут — возврат в самый первый сон
         SFX.portal();
         showDawn();
       } else {
@@ -2542,22 +2646,20 @@ function loop(){
         const gained=score-scoreAtLevelStart;
         score+=100*depth;
         if(depth>=17&&echo>=ECHO_GOAL){
-          // эхо заполнено — край сна
           showInfinityTransition();
           setTimeout(()=>{
             if(state!=='transition') return;
             buildInfinityLevel(); resetPlayer();
-            if(locked){ state='playing'; }
+            if(platform==='mobile'||locked){ state='playing'; }
             else { state='paused'; showPause(); }
             document.getElementById('overlay').classList.add('hidden');
           },1900);
         } else if(depth>=24&&gained<=LOOP_MIN){
-          // петля: сон не отпускает ленивых
           showLoopTransition();
           setTimeout(()=>{
             if(state!=='transition') return;
             buildLevel(depth); resetPlayer();
-            if(locked){ state='playing'; }
+            if(platform==='mobile'||locked){ state='playing'; }
             else { state='paused'; showPause(); }
             document.getElementById('overlay').classList.add('hidden');
           },1700);
@@ -2569,7 +2671,7 @@ function loop(){
           setTimeout(()=>{
             if(state!=='transition') return;
             buildLevel(depth); resetPlayer();
-            if(locked){ state='playing'; }
+            if(platform==='mobile'||locked){ state='playing'; }
             else { state='paused'; showPause(); }
             document.getElementById('overlay').classList.add('hidden');
           },1500);
@@ -2597,6 +2699,11 @@ addEventListener('resize',()=>{
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
 });
+addEventListener('orientationchange',()=>setTimeout(()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+},250));
 </script>
 </body>
 </html>
