@@ -252,6 +252,8 @@
 /* ============================================================
    БЕССОННИЦА — сюрреалистичный FPS в одном файле
    титул: выбор платформы — ПК или МОБИЛЬНОЕ
+   оружие: отдельный проход рендера — никогда не проваливается
+           в стены и корректно перекрывает само себя
    1–7:   небо темнеет до ночи; с 7-й — шёпот
    3+:    пулемётчики — очереди коротких лучей
    10:    стены дышат
@@ -281,7 +283,7 @@ const LOOP_DEPTH = 24;
 const LOOP_MIN = 50;
 const INF_GRAV = 5, INF_JUMP = 9.5, INF_WALK = 9.5, INF_RUN = 14;
 const INF_ENEMIES = 24;
-const TOUCH_SENS = 0.0062;   // рад на пиксель стика обзора
+const TOUCH_SENS = 0.0062;
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd = (a,b)=>a+Math.random()*(b-a);
@@ -658,6 +660,11 @@ function applyAtmosphere(d){
   sunGlow.material.opacity = 0.4*NIGHT;
   sunGroup.visible = d < 17;
   playerLightBase = NIGHT*1.25;
+  // свет на оружии: днём тёплый, ночью холодный и тише
+  gunHemi.intensity = 0.85 - 0.3*NIGHT;
+  gunHemi.color.set(new THREE.Color(0xfff6e6).lerp(new THREE.Color(0x9fb4de), NIGHT));
+  gunDir.intensity = 0.6 - 0.25*NIGHT;
+  gunDir.color.set(0xffffff);
   document.body.classList.toggle('night', NIGHT >= 0.5);
   document.getElementById('vignette').style.background =
     `radial-gradient(ellipse at center, transparent ${62-18*NIGHT}%, rgba(8,7,10,${0.42+0.25*NIGHT}) 100%)`;
@@ -674,6 +681,11 @@ function applyInfinityAtmosphere(){
   wallMat.color.setScalar(1);
   sunGroup.visible = false;
   playerLightBase = 0.5;
+  // оружие в свете рассвета — тёплое, снизу
+  gunHemi.intensity = 0.95;
+  gunHemi.color.set(0xffd9b0);
+  gunDir.intensity = 0.7;
+  gunDir.color.set(0xffb37a);
   document.body.classList.add('night');
   document.getElementById('vignette').style.background =
     'radial-gradient(ellipse at center, transparent 66%, rgba(8,7,10,.4) 100%)';
@@ -691,7 +703,6 @@ let infinityMode=false, echo=0, scoreAtLevelStart=0;
 let platforms=[], dawnRing=null, dawnGlow=null;
 let infSpawnT=0;
 let curGrav=GRAV, curJump=JUMP, curWalk=WALK, curRun=RUN;
-// платформа и сенсорный ввод
 let platform='pc';
 const touchUI={lookId:null,moveId:null,moveX:0,moveY:0,
   fireHeld:false,jumpHeld:false,fireBlocked:false};
@@ -921,7 +932,6 @@ function showLevelSelect(){
     ${platform==='mobile'?'[ тап мимо кнопок — назад ]':'[ esc или клик мимо кнопок — назад ]'}</div>`);
 }
 
-// запуск/возврат в игру с учётом платформы
 function startPlaying(){
   state='playing';
   overlay.classList.add('hidden');
@@ -958,13 +968,11 @@ function choosePlatform(p){
 
 document.getElementById('overlay').addEventListener('click',e=>{
   initAudio();
-  // выбор платформы на титуле
   const plat=e.target.closest('.plat-btn');
   if(plat&&state==='menu'){
     choosePlatform(plat.dataset.plat);
     return;
   }
-  // выбор глубины из секретного меню
   const btn=e.target.closest('.lvl-btn');
   if(btn&&(state==='paused'||state==='menu')){
     levelSelectOpen=false; shiftSeq=0;
@@ -979,7 +987,6 @@ document.getElementById('overlay').addEventListener('click',e=>{
     resumeGame();
     return;
   }
-  // мобильный секрет: 5 тапов по заголовку
   if(platform==='mobile'&&e.target.closest('h1')&&(state==='paused'||state==='menu')&&!levelSelectOpen){
     const now=performance.now();
     if(now-shiftSeqT>1600) shiftSeq=0;
@@ -987,7 +994,6 @@ document.getElementById('overlay').addEventListener('click',e=>{
     if(++shiftSeq>=5){ shiftSeq=0; showLevelSelect(); }
     return;
   }
-  // выход в титул (смена платформы)
   if(e.target.closest('.menu-link')&&state==='paused'){
     state='menu';
     laserOff(); moonSound(false);
@@ -1001,7 +1007,6 @@ document.getElementById('overlay').addEventListener('click',e=>{
     return;
   }
   if(state==='menu'){
-    // на титуле игра начинается только выбором платформы
     return;
   } else if(state==='dead'){
     deaths++;
@@ -1942,9 +1947,11 @@ const gunState=WEAPONS.map((w,i)=>({w:i,ammo:w.mag,reloading:0}));
 let curW=0, cooldown=0, switchT=0, recoil=0;
 let laserHeld=false, laserOn=false, laserTickT=0;
 
+// материалы оружия — обычные, с depth-тестом:
+// корректное взаимное перекрытие деталей даёт второй проход рендера
 function vmMat(c,e){ const m=new THREE.MeshLambertMaterial({color:c});
   if(e)m.emissive=new THREE.Color(e),m.emissiveIntensity=0.7;
-  m.depthTest=false; return m; }
+  return m; }
 const M_DARK=vmMat(0x141210), M_LIGHT=vmMat(0xe6dfd0), M_WOOD=vmMat(0x5a4130),
       M_RED=vmMat(0x8a1207,0xe02414), M_CORE=vmMat(0x5a0d05,0xff2b17);
 function box(w,h,d,mat){ return new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); }
@@ -2007,24 +2014,38 @@ function buildLaser(){
 }
 const gunModels=[buildRevolver(),buildShotgun(),buildRocket(),buildLaser()];
 const gunRig=new THREE.Group();
-gunModels.forEach(m=>{ m.visible=false; m.traverse(o=>o.renderOrder=999); gunRig.add(m); });
+gunModels.forEach(m=>{ m.visible=false; gunRig.add(m); });
 gunModels[0].visible=true;
 const GUN_BASE=new THREE.Vector3(0.42,-0.42,-0.82);
 gunRig.position.copy(GUN_BASE);
-camera.add(gunRig);
+
+/* ---------- отдельная сцена оружия (двухпроходный рендер) ----------
+   мир рисуется первым проходом, затем depth-буфер очищается и
+   оружие рисуется вторым — поверх стен, но со СВОИМ depth-тестом:
+   детали корректно перекрывают друг друга, ничего не «прозрачно» */
+const gunScene=new THREE.Scene();
+const gunCamera=new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.01, 10);
+const gunHemi=new THREE.HemisphereLight(0xfff6e6, 0x40382e, 0.85);
+const gunDir=new THREE.DirectionalLight(0xffffff, 0.6);
+gunDir.position.set(0.6,1,0.4);
+gunScene.add(gunHemi,gunDir);
+gunScene.add(gunRig);
+
+// вспышка на дуле — единственный элемент оружия без depth-теста:
+// пламя всегда горит поверх ствола
+const flashMesh=new THREE.Mesh(new THREE.OctahedronGeometry(0.09),
+  new THREE.MeshBasicMaterial({color:0xfff3c8,depthTest:false}));
+flashMesh.visible=false; flashMesh.renderOrder=1000; gunRig.add(flashMesh);
+// точечный свет от вспышки — в мировой сцене (освещает стены)
+const flashLight=new THREE.PointLight(0xffd9a0,0,16);
+flashLight.position.set(0.42,-0.3,-1.4); camera.add(flashLight);
+const boomLight=new THREE.PointLight(0xff7038,0,30); scene.add(boomLight);
 
 const laserBeam=new THREE.Mesh(new THREE.CylinderGeometry(1,1,1,8),
   new THREE.MeshBasicMaterial({color:0xff2b17,transparent:true,opacity:0.8,fog:false,
     blending:THREE.AdditiveBlending,depthWrite:false}));
 laserBeam.visible=false;
 scene.add(laserBeam);
-
-const flashMesh=new THREE.Mesh(new THREE.OctahedronGeometry(0.09),
-  new THREE.MeshBasicMaterial({color:0xfff3c8,depthTest:false}));
-flashMesh.visible=false; flashMesh.renderOrder=1000; gunRig.add(flashMesh);
-const flashLight=new THREE.PointLight(0xffd9a0,0,16);
-flashLight.position.set(0.42,-0.3,-1.4); camera.add(flashLight);
-const boomLight=new THREE.PointLight(0xff7038,0,30); scene.add(boomLight);
 
 function laserOff(){
   laserHeld=false;
@@ -2102,7 +2123,7 @@ function hitscan(o,d,dmg){
 }
 function fireLaserTick(){
   if(!infinityMode&&player.hp<=LASER_MIN_HP){
-    touchUI.fireBlocked=true;   // тач: луч не включится сам, пока не отпустишь
+    touchUI.fireBlocked=true;
     laserOff(); SFX.dry(); return;
   }
   const o=camera.position.clone();
@@ -2316,7 +2337,6 @@ function updateHUD(){
     const el=$('ui-instab');
     el.innerHTML=it; el.style.display=it?'block':'none';
   }
-  // кнопки оружия на таче
   if(platform==='mobile'){
     for(let i=0;i<4;i++){
       const el=$('t-w'+(i+1));
@@ -2358,7 +2378,6 @@ function knobTo(base,knob,cx,cy){
   const kl=$('t-knob-l'), km=$('t-knob-m');
   let lx=0, ly=0;
 
-  // стикпад обзора: движение пальца = поворот камеры
   lookEl.addEventListener('pointerdown',e=>{
     if(touchUI.lookId!==null) return;
     touchUI.lookId=e.pointerId; lx=e.clientX; ly=e.clientY;
@@ -2384,8 +2403,6 @@ function knobTo(base,knob,cx,cy){
   lookEl.addEventListener('pointerup',lookEnd);
   lookEl.addEventListener('pointercancel',lookEnd);
 
-  // кнопка вперёд/назад: верхняя половина — вперёд, нижняя — назад
-  // (смещение вбок даёт стрейф — без него лучи не отпарируешь)
   function setMove(cx,cy){
     const r=moveEl.getBoundingClientRect();
     let dx=(cx-(r.left+r.width/2))/(r.width/2);
@@ -2420,7 +2437,6 @@ function knobTo(base,knob,cx,cy){
   moveEl.addEventListener('pointerup',moveEnd);
   moveEl.addEventListener('pointercancel',moveEnd);
 
-  // огонь: удержание = автоогонь (лазер — непрерывный луч)
   const fire=$('t-fire');
   fire.addEventListener('pointerdown',e=>{
     touchUI.fireHeld=true; touchUI.fireBlocked=false;
@@ -2435,7 +2451,6 @@ function knobTo(base,knob,cx,cy){
   fire.addEventListener('pointerup',fireEnd);
   fire.addEventListener('pointercancel',fireEnd);
 
-  // прыжок
   const jump=$('t-jump');
   jump.addEventListener('pointerdown',e=>{
     touchUI.jumpHeld=true;
@@ -2445,7 +2460,6 @@ function knobTo(base,knob,cx,cy){
   jump.addEventListener('pointerup',()=>touchUI.jumpHeld=false);
   jump.addEventListener('pointercancel',()=>touchUI.jumpHeld=false);
 
-  // пауза / перезарядка / оружие
   $('t-pause').addEventListener('pointerdown',e=>{
     e.preventDefault();
     if(state==='playing'){
@@ -2558,7 +2572,7 @@ function loop(){
         (0.93+0.05*Math.sin(gameT*6.1)+0.03*Math.sin(gameT*15.7));
     } else playerLight.intensity=0;
 
-    // --- сенсорный огонь: удержание = автоогонь / луч ---
+    // --- сенсорный огонь ---
     if(platform==='mobile'&&touchUI.fireHeld){
       const fw=WEAPONS[curW];
       if(fw.laser){ if(!touchUI.fireBlocked) laserHeld=true; }
@@ -2690,18 +2704,35 @@ function loop(){
     updateDyson(dt);
   }
 
+  /* ---------- рендер в два прохода ----------
+     1) мир (обычная очистка буферов)
+     2) depth очищается → оружие рисуется поверх мира,
+        но с честным depth-тестом между собственными деталями */
+  renderer.autoClear=true;
   renderer.render(scene,camera);
+  renderer.autoClear=false;
+  renderer.clearDepth();
+  if(gunCamera.fov!==camera.fov){
+    gunCamera.fov=camera.fov;
+    gunCamera.updateProjectionMatrix();
+  }
+  renderer.render(gunScene,gunCamera);
+  renderer.autoClear=true;
 }
 loop();
 
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
+  gunCamera.aspect=innerWidth/innerHeight;
+  gunCamera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
 });
 addEventListener('orientationchange',()=>setTimeout(()=>{
   camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
+  gunCamera.aspect=innerWidth/innerHeight;
+  gunCamera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
 },250));
 </script>
