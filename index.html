@@ -95,6 +95,9 @@
   #overlay .lvl-btn:hover{background:var(--red);border-color:var(--red);color:#fff;transform:translateY(-2px)}
   #overlay .lvl-btn.cur{border-color:var(--red);color:var(--red)}
   #overlay .lvl-btn.cur:hover{color:#fff}
+  /* кнопка рассвета — синяя, как бесконечность */
+  #overlay .lvl-btn.inf{border-color:var(--blue);color:var(--blue)}
+  #overlay .lvl-btn.inf:hover{background:var(--blue);border-color:var(--blue);color:#fff;transform:translateY(-2px)}
 </style>
 </head>
 <body>
@@ -139,7 +142,9 @@
    16:    броня — сфера Дайсона
    17+:   красная луна; эхо сна → 2300 = рассвет
    24+:   петля — меньше 50 очков за проход = та же глубина
-   РАССВЕТ: бессмертие, лунная гравитация, фигуры-платформы
+   РАССВЕТ: бессмертие, лунная гравитация, фигуры-платформы,
+            вечная толпа врагов для развлечения
+   секрет: Shift×5 в паузе — выбор глубины + кнопка ∞
    ============================================================ */
 
 // ---------- константы ----------
@@ -158,8 +163,9 @@ const ARMOR_REGEN = 7, ARMOR_DELAY = 4;
 const ECHO_GOAL = 2300;   // эхо с убийств на 17+ открывает рассвет
 const LOOP_DEPTH = 24;    // с этой глубины лень наказывается
 const LOOP_MIN = 50;      // меньше очков за проход = петля
-// физика рассвета
-const INF_GRAV = 7, INF_JUMP = 9.5, INF_WALK = 9.5, INF_RUN = 14;
+// физика рассвета — гравитация ослаблена ещё чуть-чуть
+const INF_GRAV = 5, INF_JUMP = 9.5, INF_WALK = 9.5, INF_RUN = 14;
+const INF_ENEMIES = 24;   // вечная толпа на рассвете
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd = (a,b)=>a+Math.random()*(b-a);
@@ -579,6 +585,7 @@ let shiftSeq=0, shiftSeqT=0, levelSelectOpen=false;
 // экономика и рассвет
 let infinityMode=false, echo=0, scoreAtLevelStart=0;
 let platforms=[], dawnRing=null, dawnGlow=null;
+let infSpawnT=0;           // таймер пополнения толпы на рассвете
 // текущая физика (меняется на рассвете)
 let curGrav=GRAV, curJump=JUMP, curWalk=WALK, curRun=RUN;
 
@@ -789,12 +796,14 @@ function showLevelSelect(){
   levelSelectOpen=true; shiftSeq=0;
   let btns='';
   for(let i=1;i<=17;i++)
-    btns+=`<button class="lvl-btn${i===depth?' cur':''}" data-depth="${i}">${String(i).padStart(2,'0')}</button>`;
+    btns+=`<button class="lvl-btn${(i===depth&&!infinityMode)?' cur':''}" data-depth="${i}">${String(i).padStart(2,'0')}</button>`;
+  btns+=`<button class="lvl-btn inf${infinityMode?' cur':''}" data-inf="1">∞</button>`;
   overlayShow(`
     <h1 style="font-size:38px">ВЫБОР <em>ГЛУБИНЫ</em></h1>
     <div class="sub">сон можно начать с любого слоя</div>
     <div class="lvl-grid">${btns}</div>
     <div class="quote">числа — это слои. чем больше, тем хуже тебе.<br>
+    ∞ — рассвет: бессмертие, бесплатный луч и вечная толпа в небе<br>
     [ esc или клик мимо кнопок — назад ]</div>`);
 }
 
@@ -803,9 +812,15 @@ document.getElementById('overlay').addEventListener('click',e=>{
   const btn=e.target.closest('.lvl-btn');
   if(btn&&(state==='paused'||state==='menu')){
     levelSelectOpen=false; shiftSeq=0;
-    score=0; kills=0; deaths=0; echo=0; infinityMode=false;
-    depth=parseInt(btn.dataset.depth,10);
-    buildLevel(depth); resetPlayer();
+    score=0; kills=0; deaths=0; echo=0;
+    if(btn.dataset.inf){
+      // сразу на рассвет
+      buildInfinityLevel(); resetPlayer();
+    } else {
+      infinityMode=false;
+      depth=parseInt(btn.dataset.depth,10);
+      buildLevel(depth); resetPlayer();
+    }
     pendingState='playing';
     cv.requestPointerLock();
     return;
@@ -1175,6 +1190,7 @@ function buildInfinityLevel(){
     eGroup.remove(ch);
   }
   scoreAtLevelStart=score;
+  infSpawnT=0;
 
   applyInfinityAtmosphere();
   setAudioMood(true);
@@ -1273,10 +1289,11 @@ function buildInfinityLevel(){
       types[rndi(0,types.length-1)], rnd(2,3.4));
   }
 
-  // фигуры внизу всё ещё стреляют — им больше не во что попадать
-  for(let i=0;i<10;i++){
-    const ang=rnd(0,6.28), rr=rnd(22,60);
-    spawnEnemy(Math.cos(ang)*rr,Math.sin(ang)*rr,depth);
+  // карнавал: вечная толпа фигур — стреляют в бессмертного, он отвечает лучом
+  // (высота разлёта 3–44: и у земли, и вдоль всей спирали)
+  for(let i=0;i<INF_ENEMIES;i++){
+    const ang=rnd(0,6.28), rr=rnd(16,70);
+    spawnEnemy(Math.cos(ang)*rr,Math.sin(ang)*rr,17);
   }
 }
 
@@ -1296,7 +1313,7 @@ function resetPlayer(){
   armor = hasArmor() ? 100 : 0;
   const hint=document.getElementById('hint');
   hint.textContent =
-    infinityMode ? 'ты бессмертен. прыгай по фигурам к свету — он вернёт тебя в первый сон' :
+    infinityMode ? 'бессмертие. толпа ждёт. прыгай по фигурам к свету — он вернёт тебя в первый сон' :
     depth>=17 ? `луна красная. эхо сна ${echo}/${ECHO_GOAL} — рассвет ждёт` :
     depth>=16 ? 'синие кольца защищают. пока вращаются' :
     depth>=15 ? 'нажми [4] — лазер. каждая секунда стоит здоровья' :
@@ -1514,7 +1531,8 @@ function spawnEnemy(x,z,d){
   eGroup.add(mesh);
   const e={type:t,mesh,aim,beam,center:new THREE.Vector3(x,1.6,z),
     hp:t.hp*(1+(d-1)*0.06), r:t.r,
-    flyY:infinityMode?rnd(4,26):1.6,
+    // на рассвете фигуры разлетаются по всей высоте — от земли до вершины спирали
+    flyY:infinityMode?rnd(3,44):1.6,
     state:'hunt', atkT:rnd(1.2,3.5), chargeT:0, beamT:0, loseT:0,
     burstLeft:0, burstT:0,
     aimP:new THREE.Vector3(x,1.2,z), phase:rnd(0,9), spin:rnd(0.6,1.6),
@@ -1523,6 +1541,7 @@ function spawnEnemy(x,z,d){
   mesh.position.copy(e.center);
   mesh.scale.setScalar(0.01);
   enemies.push(e);
+  return e;
 }
 function orientCyl(mesh,a,b){
   const dir=new THREE.Vector3().subVectors(b,a);
@@ -2128,7 +2147,6 @@ function updateHUD(){
     $('hp-fill').classList.toggle('low',low);
     $('armor-bar').style.display=hasArmor()?'block':'none';
     if(hasArmor()) $('armor-fill').style.width=armor+'%';
-    // эхо сна — путь к рассвету
     if(depth>=17){
       const txt = echo>=ECHO_GOAL ? 'эхо сна — <b>рассвет ждёт</b>'
         : `эхо сна <b>${echo}</b> / ${ECHO_GOAL}`;
@@ -2292,6 +2310,20 @@ function loop(){
       if(laserTickT<=0){ laserTickT=LASER_TICK; fireLaserTick(); }
       if(laserOn) updateLaserBeam();
     } else if(laserOn){ laserOff(); }
+
+    // --- рассвет: толпа не редеет ---
+    // павших сменяют новые — и появляются на высоте игрока, чтобы
+    // бой шёл вдоль всей спирали, а не только у земли
+    if(infinityMode){
+      infSpawnT-=dt;
+      if(enemies.length<INF_ENEMIES&&infSpawnT<=0){
+        infSpawnT=0.9;
+        const ang=rnd(0,Math.PI*2), rr=rnd(26,64);
+        const ne=spawnEnemy(player.pos.x+Math.cos(ang)*rr, player.pos.z+Math.sin(ang)*rr, 17);
+        ne.flyY=clamp(player.pos.y+rnd(-10,14),2.5,52);
+        ne.center.y=ne.flyY;
+      }
+    }
 
     updateEnemies(dt);
     updateRockets(dt);
