@@ -47,6 +47,7 @@
   #ui-instab{display:none;color:var(--red)}
   #ui-echo{display:none;color:var(--blue)}
   body.night #ui-echo{color:#7fb0ff}
+  #ui-mod{display:none}
   #hud-bl{position:absolute;bottom:34px;left:38px}
   #hp-num{font-family:'Unbounded';font-weight:900;font-size:44px;line-height:1;letter-spacing:.02em}
   #hp-num.low{color:var(--red)}
@@ -159,16 +160,17 @@
   #overlay .lvl-btn.cur:hover{color:#fff}
   #overlay .lvl-btn.inf{border-color:var(--blue);color:var(--blue)}
   #overlay .lvl-btn.inf:hover{background:var(--blue);border-color:var(--blue);color:#fff;transform:translateY(-2px)}
-  /* выбор платформы */
+  /* платформа / продолжение / модификаторы */
   #overlay .plat-row{display:flex;gap:14px;justify-content:center;margin-top:36px;flex-wrap:wrap}
-  #overlay .plat-btn{font-family:'IBM Plex Mono',monospace;padding:16px 26px;background:none;
+  #overlay .plat-btn{font-family:'IBM Plex Mono',monospace;padding:16px 22px;background:none;
     border:1px solid rgba(20,18,15,.45);color:var(--ink);cursor:pointer;
     display:flex;flex-direction:column;gap:7px;align-items:center;
     text-transform:uppercase;letter-spacing:.14em;transition:all .13s}
-  #overlay .plat-btn b{font-family:'Unbounded';font-weight:700;font-size:16px;letter-spacing:.06em}
+  #overlay .plat-btn b{font-family:'Unbounded';font-weight:700;font-size:15px;letter-spacing:.06em}
   #overlay .plat-btn span{font-size:10.5px;opacity:.6}
-  #overlay .plat-btn i{font-style:normal;font-size:9.5px;color:var(--red);letter-spacing:.24em}
   #overlay .plat-btn:hover{background:var(--ink);color:var(--paper);transform:translateY(-2px)}
+  #overlay .plat-btn.sel{border-color:var(--red);box-shadow:inset 0 0 0 1px var(--red)}
+  #overlay .plat-btn.sel b{color:var(--red)}
   #overlay .menu-link{margin-top:18px;font-size:11px;letter-spacing:.22em;opacity:.5;text-transform:uppercase}
   @media (max-width:760px){
     #overlay h1{font-size:34px}
@@ -178,8 +180,9 @@
     #overlay .ctrl{font-size:10.5px;padding:10px 0;margin-top:22px}
     #overlay .ctrl b{min-width:130px}
     #overlay .stat{font-size:11px}
-    #overlay .plat-btn{padding:13px 18px}
-    #overlay .plat-btn b{font-size:14px}
+    #overlay .plat-btn{padding:12px 14px}
+    #overlay .plat-btn b{font-size:12px}
+    #overlay .plat-btn span{font-size:9px}
     #overlay .go{font-size:12px;margin-top:24px}
     #overlay .lvl-grid{grid-template-columns:repeat(4,1fr);gap:8px;max-width:320px}
     #overlay .lvl-btn{font-size:13px;padding:10px 0}
@@ -199,6 +202,7 @@
     <div class="dim">уничтожено <b id="ui-kills">0</b> · пробуждений <b id="ui-deaths">0</b></div>
     <div id="ui-instab"></div>
     <div id="ui-echo"></div>
+    <div id="ui-mod" class="dim"></div>
   </div>
   <div id="hud-bl">
     <div id="hp-num">100</div>
@@ -237,6 +241,7 @@
     <div id="t-w2" class="tbtn wbtn">2</div>
     <div id="t-w3" class="tbtn wbtn">3</div>
     <div id="t-w4" class="tbtn wbtn">4</div>
+    <div id="t-w5" class="tbtn wbtn">5</div>
     <div id="t-reload" class="tbtn">
       <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
@@ -252,8 +257,10 @@
 /* ============================================================
    БЕССОННИЦА — сюрреалистичный FPS в одном файле
    титул: выбор платформы — ПК или МОБИЛЬНОЕ
-   оружие: отдельный проход рендера — никогда не проваливается
-           в стены и корректно перекрывает само себя
+   сохранение: localStorage — сон помнит глубину и счёт
+   награда за рассвет: модификатор на следующий сон —
+     лунная гравитация / бесконечный луч / АК-47
+   оружие: отдельный проход рендера, АК-47 — автоогонь
    1–7:   небо темнеет до ночи; с 7-й — шёпот
    3+:    пулемётчики — очереди коротких лучей
    10:    стены дышат
@@ -284,11 +291,36 @@ const LOOP_MIN = 50;
 const INF_GRAV = 5, INF_JUMP = 9.5, INF_WALK = 9.5, INF_RUN = 14;
 const INF_ENEMIES = 24;
 const TOUCH_SENS = 0.0062;
+// модификатор «лунная гравитация»
+const MOONG_GRAV = 7, MOONG_JUMP = 9.5;
+const SAVE_KEY = 'insomnia_save_v1';
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd = (a,b)=>a+Math.random()*(b-a);
 const rndi = (a,b)=>Math.floor(rnd(a,b+1));
 const easeInOut = t=>t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+
+// ---------- сохранение ----------
+function saveGame(){
+  try{
+    localStorage.setItem(SAVE_KEY,JSON.stringify({
+      d:depth, s:score, k:kills, de:deaths, e:echo, b:bestDepth,
+      m:mod, inf:infinityMode
+    }));
+  }catch(err){}
+}
+function loadSave(){
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);
+    if(!raw) return null;
+    const o=JSON.parse(raw);
+    if(!o||typeof o.d!=='number'||o.d<1) return null;
+    return o;
+  }catch(err){ return null; }
+}
+function modName(m){
+  return m==='moon'?'лунная гравитация':m==='beam'?'бесконечный луч':m==='ak'?'ак-47':'';
+}
 
 // ---------- звук ----------
 let AC=null, master=null, noiseBuf=null;
@@ -355,6 +387,7 @@ function sTone(dur,vol,f0,f1,type,delay){
 const SFX = {
   rev(){ sNoise(0.16,0.5,2200,'bandpass',0.6); sTone(0.16,0.3,170,55,'triangle'); },
   shotgun(){ sNoise(0.32,0.75,950,'lowpass',0.8); sTone(0.28,0.45,110,32,'triangle'); sNoise(0.1,0.3,3000,'highpass',1); },
+  ak(){ sNoise(0.09,0.42,1900,'bandpass',1); sTone(0.09,0.3,200,70,'sawtooth'); },
   rocket(){ sNoise(0.45,0.5,650,'lowpass',1); sTone(0.4,0.25,320,70,'sawtooth'); },
   boom(){ sNoise(0.9,0.9,380,'lowpass',0.7); sTone(0.7,0.6,95,26,'sine'); sNoise(0.25,0.4,2000,'highpass',1,0.03); },
   zap(v){ sTone(0.18,v||0.3,300,58,'sawtooth'); sNoise(0.16,(v||0.3)*0.6,1500,'lowpass',1); },
@@ -660,7 +693,6 @@ function applyAtmosphere(d){
   sunGlow.material.opacity = 0.4*NIGHT;
   sunGroup.visible = d < 17;
   playerLightBase = NIGHT*1.25;
-  // свет на оружии: днём тёплый, ночью холодный и тише
   gunHemi.intensity = 0.85 - 0.3*NIGHT;
   gunHemi.color.set(new THREE.Color(0xfff6e6).lerp(new THREE.Color(0x9fb4de), NIGHT));
   gunDir.intensity = 0.6 - 0.25*NIGHT;
@@ -681,7 +713,6 @@ function applyInfinityAtmosphere(){
   wallMat.color.setScalar(1);
   sunGroup.visible = false;
   playerLightBase = 0.5;
-  // оружие в свете рассвета — тёплое, снизу
   gunHemi.intensity = 0.95;
   gunHemi.color.set(0xffd9b0);
   gunDir.intensity = 0.7;
@@ -704,11 +735,23 @@ let platforms=[], dawnRing=null, dawnGlow=null;
 let infSpawnT=0;
 let curGrav=GRAV, curJump=JUMP, curWalk=WALK, curRun=RUN;
 let platform='pc';
+// модификатор текущего сна (награда за рассвет)
+let mod=null;
+let mouseHeld=false;
+let lastMod='';
 const touchUI={lookId:null,moveId:null,moveX:0,moveY:0,
   fireHeld:false,jumpHeld:false,fireBlocked:false};
 
-const hasLaser = ()=>depth>=15||infinityMode;
+// луч доступен с 15-й, всегда на рассвете, всегда с модификатором «бесконечный луч»
+const hasLaser = ()=>depth>=15||infinityMode||mod==='beam';
 const hasArmor = ()=>depth>=16&&!infinityMode;
+// список доступных оружий (для колеса и клавиш)
+function availWeapons(){
+  const l=[0,1,2];
+  if(hasLaser()) l.push(3);
+  if(mod==='ak'&&!infinityMode) l.push(4);
+  return l;
+}
 
 const player = { pos:new THREE.Vector3(), vel:new THREE.Vector3(),
   hp:100, onGround:true, yaw:0, pitch:0, lastHurt:-99, bob:0, stepAcc:0 };
@@ -738,12 +781,15 @@ addEventListener('keydown',e=>{
   if(e.code==='Digit2') switchWeapon(1);
   if(e.code==='Digit3') switchWeapon(2);
   if(e.code==='Digit4'&&hasLaser()) switchWeapon(3);
+  if(e.code==='Digit5'&&mod==='ak'&&!infinityMode) switchWeapon(4);
 });
 addEventListener('keyup',e=>keys[e.code]=false);
 addEventListener('wheel',e=>{
   if(state!=='playing') return;
-  const avail=hasLaser()?4:3;
-  switchWeapon((curW+(e.deltaY>0?1:avail-1))%avail);
+  const l=availWeapons();
+  let idx=l.indexOf(curW); if(idx<0) idx=0;
+  const ni=l[(idx+(e.deltaY>0?1:l.length-1))%l.length];
+  switchWeapon(ni);
 });
 document.addEventListener('mousemove',e=>{
   if(!locked||state!=='playing') return;
@@ -751,9 +797,9 @@ document.addEventListener('mousemove',e=>{
   player.pitch  = clamp(player.pitch - e.movementY*0.0022, -1.5, 1.5);
 });
 document.addEventListener('mousedown',e=>{
-  if(locked && state==='playing' && e.button===0) tryFire();
+  if(locked && state==='playing' && e.button===0){ mouseHeld=true; tryFire(); }
 });
-document.addEventListener('mouseup',()=>{ laserHeld=false; });
+document.addEventListener('mouseup',()=>{ laserHeld=false; mouseHeld=false; });
 
 const cv = renderer.domElement;
 document.addEventListener('pointerlockchange',()=>{
@@ -845,24 +891,26 @@ const tapWord=()=>platform==='mobile'?'коснись':'щёлкни';
 
 function showIntro(){
   const touchable=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+  const sv=loadSave();
   overlayShow(`
     <h1>БЕССОН<em>НИЦА</em></h1>
     <div class="sub">шутер про лабиринт, из которого не выходят</div>
     <div class="plat-row">
       <button class="plat-btn" data-plat="pc">
         <b>ПК</b>
-        <span>wasd · мышь · лкм · 1–4 · r</span>
-        ${touchable?'':'<i>рекомендуется</i>'}
+        <span>wasd · мышь · лкм · 1–5 · r</span>
+        ${touchable?'':'<i style="font-style:normal;font-size:9.5px;color:var(--red);letter-spacing:.24em">рекомендуется</i>'}
       </button>
       <button class="plat-btn" data-plat="mobile">
         <b>МОБИЛЬНОЕ</b>
         <span>стик · кнопки · автоогонь</span>
-        ${touchable?'<i>рекомендуется</i>':''}
+        ${touchable?'<i style="font-style:normal;font-size:9.5px;color:var(--red);letter-spacing:.24em">рекомендуется</i>':''}
       </button>
     </div>
     <div class="quote">небо темнеет с каждой глубиной · после седьмой — ночь и шёпот<br>
     на семнадцатой — красная луна · 2300 эха сна открывают рассвет<br>
-    на рассвете нет смерти — только шаги по небу и путь обратно</div>`);
+    за рассвет — модификатор на следующий сон: гравитация · луч · ак-47</div>
+    ${sv?`<div class="menu-link">сон помнит тебя: глубина ${sv.inf?'∞':String(sv.d).padStart(2,'0')} · счёт ${sv.s}</div>`:''}`);
 }
 function showPause(){
   levelSelectOpen=false; shiftSeq=0;
@@ -914,8 +962,50 @@ function showDawn(){
     <div class="stat">сна пройдено: <b>${depth}</b> глубин · счёт <b>${score}</b><br>
     уничтожено <b>${kills}</b> · пробуждений <b>${deaths}</b> · эхо сна <b>заполнено</b></div>
     <div class="quote">${DAWN_QUOTES[rndi(0,DAWN_QUOTES.length-1)]}<br>
-    ты дошёл до края сна. лабиринт уже ждёт — с самого начала.</div>
-    <div class="go">[ проснуться заново ]</div>`);
+    сон пройден. выбери, что останется с тобой в следующем.</div>
+    <div class="go">[ выбрать награду ]</div>`);
+}
+// экран продолжения сохранённого сна
+function showContinue(sv){
+  state='continue';
+  document.body.classList.remove('playing');
+  const modTxt=modName(sv.m);
+  overlayShow(`
+    <h1>СОН <em>ПОМНИТ</em></h1>
+    <div class="stat">глубина <b>${sv.inf?'∞':String(sv.d).padStart(2,'0')}</b> · счёт <b>${sv.s}</b> · эхо <b>${sv.e||0}</b>/${ECHO_GOAL}<br>
+    уничтожено <b>${sv.k||0}</b> · пробуждений <b>${sv.de||0}</b>${modTxt?` · модификатор: <b>${modTxt}</b>`:''}</div>
+    <div class="plat-row">
+      <button class="plat-btn" data-cont="1">
+        <b>ПРОДОЛЖИТЬ</b><span>вернуться в тот же сон</span>
+      </button>
+      <button class="plat-btn" data-cont="0">
+        <b>НОВЫЙ СОН</b><span>с первой глубины</span>
+      </button>
+    </div>
+    <div class="quote">лабиринт сгенерирован заново. счёт и глубина — твои.</div>`);
+}
+// выбор модификатора после рассвета
+function showModSelect(){
+  state='modselect';
+  document.body.classList.remove('playing');
+  overlayShow(`
+    <h1>НАГРАДА <em>СНА</em></h1>
+    <div class="sub">что останется с тобой в следующем сне</div>
+    <div class="plat-row">
+      <button class="plat-btn mod-btn${mod==='moon'?' sel':''}" data-mod="moon">
+        <b>ЛУННАЯ ГРАВИТАЦИЯ</b>
+        <span>прыжки выше · падение медленнее</span>
+      </button>
+      <button class="plat-btn mod-btn${mod==='beam'?' sel':''}" data-mod="beam">
+        <b>БЕСКОНЕЧНЫЙ ЛУЧ</b>
+        <span>лазер с первой глубины · не ест здоровье</span>
+      </button>
+      <button class="plat-btn mod-btn${mod==='ak'?' sel':''}" data-mod="ak">
+        <b>АК-47</b>
+        <span>автомат · 30 патронов · клавиша 5</span>
+      </button>
+    </div>
+    <div class="menu-link mod-none">[ без модификатора ]</div>`);
 }
 function showLevelSelect(){
   levelSelectOpen=true; shiftSeq=0;
@@ -942,6 +1032,11 @@ function resumeGame(){
   if(platform==='pc'){ pendingState='playing'; cv.requestPointerLock(); }
   else startPlaying();
 }
+function startNewRun(){
+  score=0; kills=0; deaths=0; echo=0; depth=1; infinityMode=false;
+  buildLevel(1); resetPlayer();
+  resumeGame();
+}
 function choosePlatform(p){
   platform=p;
   initAudio();
@@ -961,16 +1056,46 @@ function choosePlatform(p){
     try{ renderer.setPixelRatio(Math.min(devicePixelRatio,2)); }catch(err){}
     renderer.setSize(innerWidth,innerHeight);
   }
-  score=0; kills=0; deaths=0; echo=0; infinityMode=false; depth=1;
-  buildLevel(1); resetPlayer();
-  resumeGame();
+  const sv=loadSave();
+  if(sv){ showContinue(sv); }
+  else { startNewRun(); }
 }
 
 document.getElementById('overlay').addEventListener('click',e=>{
   initAudio();
-  const plat=e.target.closest('.plat-btn');
+  const plat=e.target.closest('.plat-btn[data-plat]');
   if(plat&&state==='menu'){
     choosePlatform(plat.dataset.plat);
+    return;
+  }
+  // продолжение сохранённого сна
+  const cb=e.target.closest('[data-cont]');
+  if(cb&&state==='continue'){
+    if(cb.dataset.cont==='1'){
+      const sv=loadSave();
+      if(sv){
+        depth=sv.d; score=sv.s||0; kills=sv.k||0; deaths=sv.de||0;
+        echo=sv.e||0; bestDepth=Math.max(1,sv.b||sv.d); mod=sv.m||null;
+        if(sv.inf){ buildInfinityLevel(); }
+        else { infinityMode=false; buildLevel(depth); }
+        resetPlayer();
+        resumeGame();
+        return;
+      }
+    }
+    startNewRun();
+    return;
+  }
+  // выбор модификатора после рассвета
+  const mb=e.target.closest('.mod-btn');
+  if(mb&&state==='modselect'){
+    mod=mb.dataset.mod;
+    startNewRun();
+    return;
+  }
+  if(e.target.closest('.mod-none')&&state==='modselect'){
+    mod=null;
+    startNewRun();
     return;
   }
   const btn=e.target.closest('.lvl-btn');
@@ -1013,9 +1138,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
     buildLevel(depth); resetPlayer();
     resumeGame();
   } else if(state==='dawn'){
-    infinityMode=false; echo=0; score=0; kills=0; deaths=0; depth=1;
-    buildLevel(1); resetPlayer();
-    resumeGame();
+    showModSelect();
   } else if(state==='paused'){
     resumeGame();
   }
@@ -1153,7 +1276,10 @@ function clearEnemiesAndFx(){
 function buildLevel(d){
   disposeLevel();
   infinityMode=false;
-  curGrav=GRAV; curJump=JUMP; curWalk=WALK; curRun=RUN;
+  // физика уровня: модификатор «лунная гравитация» действует на весь сон
+  curGrav = mod==='moon' ? MOONG_GRAV : GRAV;
+  curJump = mod==='moon' ? MOONG_JUMP : JUMP;
+  curWalk=WALK; curRun=RUN;
   clearEnemiesAndFx();
   starfield=null; wallAnim=[];
   scoreAtLevelStart=score;
@@ -1316,6 +1442,8 @@ function buildLevel(d){
     const [x,z]=spawnCells[i];
     spawnEnemy((x+0.5)*CS,(z+0.5)*CS,d);
   }
+
+  saveGame(); // сон запомнил эту глубину
 }
 
 // ---------- уровень «РАССВЕТ» ----------
@@ -1441,6 +1569,8 @@ function buildInfinityLevel(){
     const ang=rnd(0,6.28), rr=rnd(16,70);
     spawnEnemy(Math.cos(ang)*rr,Math.sin(ang)*rr,17);
   }
+
+  saveGame(); // сон запомнил даже рассвет
 }
 
 function resetPlayer(){
@@ -1461,6 +1591,7 @@ function resetPlayer(){
   const hint=document.getElementById('hint');
   hint.textContent =
     infinityMode ? 'бессмертие. толпа ждёт. прыгай по фигурам к свету — он вернёт тебя в первый сон' :
+    mod==='beam' ? 'бесконечный луч — кнопка [4]. он больше не ест тебя' :
     depth>=17 ? `луна красная. эхо сна ${echo}/${ECHO_GOAL} — рассвет ждёт` :
     depth>=16 ? 'синие кольца защищают. пока вращаются' :
     depth>=15 ? 'лазер — кнопка [4]. каждая секунда стоит здоровья' :
@@ -1942,6 +2073,7 @@ const WEAPONS=[
   {name:'Двухстволка',mag:2,dmg:12,pellets:8,rate:0.5, reload:2.3,spread:0.075,kick:0.05, rocket:false},
   {name:'Ракетница',  mag:4,dmg:120,pellets:1,rate:0.9, reload:2.8,spread:0.003,kick:0.035,rocket:true},
   {name:'Лазер',      mag:0,dmg:0, pellets:0,rate:0.16,reload:0,  spread:0,    kick:0.006,laser:true},
+  {name:'АК-47',      mag:30,dmg:13,pellets:1,rate:0.105,reload:2.4,spread:0.018,kick:0.006,auto:true},
 ];
 const gunState=WEAPONS.map((w,i)=>({w:i,ammo:w.mag,reloading:0}));
 let curW=0, cooldown=0, switchT=0, recoil=0;
@@ -2012,17 +2144,30 @@ function buildLaser(){
   g.userData.bobAmp=0.015;
   return g;
 }
-const gunModels=[buildRevolver(),buildShotgun(),buildRocket(),buildLaser()];
+function buildAK(){
+  const g=new THREE.Group();
+  const recv=box(0.07,0.11,0.4,M_DARK); recv.position.set(0,0.02,-0.12); g.add(recv);
+  const dust=box(0.06,0.05,0.16,M_DARK); dust.position.set(0,0.085,-0.05); g.add(dust);
+  const barrel=cyl(0.02,0.5,M_DARK); barrel.position.set(0,0.045,-0.58); g.add(barrel);
+  const gas=cyl(0.013,0.3,M_DARK); gas.position.set(0,0.095,-0.44); g.add(gas);
+  const fsight=box(0.014,0.05,0.02,M_DARK); fsight.position.set(0,0.105,-0.78); g.add(fsight);
+  const hand=box(0.062,0.062,0.26,M_WOOD); hand.position.set(0,0.045,-0.4); g.add(hand);
+  const mag=box(0.05,0.24,0.09,M_DARK); mag.position.set(0,-0.12,-0.16); mag.rotation.x=0.45; g.add(mag);
+  const grip=box(0.05,0.14,0.08,M_WOOD); grip.position.set(0,-0.11,0.04); grip.rotation.x=0.35; g.add(grip);
+  const stock=box(0.055,0.11,0.3,M_WOOD); stock.position.set(0,-0.02,0.24); stock.rotation.x=-0.12; g.add(stock);
+  const rsight=box(0.012,0.03,0.03,M_RED); rsight.position.set(0,0.1,0.0); g.add(rsight);
+  g.userData.muzzle=new THREE.Vector3(0,0.045,-0.84);
+  g.userData.bobAmp=0.016;
+  return g;
+}
+const gunModels=[buildRevolver(),buildShotgun(),buildRocket(),buildLaser(),buildAK()];
 const gunRig=new THREE.Group();
 gunModels.forEach(m=>{ m.visible=false; gunRig.add(m); });
 gunModels[0].visible=true;
 const GUN_BASE=new THREE.Vector3(0.42,-0.42,-0.82);
 gunRig.position.copy(GUN_BASE);
 
-/* ---------- отдельная сцена оружия (двухпроходный рендер) ----------
-   мир рисуется первым проходом, затем depth-буфер очищается и
-   оружие рисуется вторым — поверх стен, но со СВОИМ depth-тестом:
-   детали корректно перекрывают друг друга, ничего не «прозрачно» */
+/* ---------- отдельная сцена оружия (двухпроходный рендер) ---------- */
 const gunScene=new THREE.Scene();
 const gunCamera=new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.01, 10);
 const gunHemi=new THREE.HemisphereLight(0xfff6e6, 0x40382e, 0.85);
@@ -2031,12 +2176,9 @@ gunDir.position.set(0.6,1,0.4);
 gunScene.add(gunHemi,gunDir);
 gunScene.add(gunRig);
 
-// вспышка на дуле — единственный элемент оружия без depth-теста:
-// пламя всегда горит поверх ствола
 const flashMesh=new THREE.Mesh(new THREE.OctahedronGeometry(0.09),
   new THREE.MeshBasicMaterial({color:0xfff3c8,depthTest:false}));
 flashMesh.visible=false; flashMesh.renderOrder=1000; gunRig.add(flashMesh);
-// точечный свет от вспышки — в мировой сцене (освещает стены)
 const flashLight=new THREE.PointLight(0xffd9a0,0,16);
 flashLight.position.set(0.42,-0.3,-1.4); camera.add(flashLight);
 const boomLight=new THREE.PointLight(0xff7038,0,30); scene.add(boomLight);
@@ -2055,6 +2197,7 @@ function laserOff(){
 function switchWeapon(i){
   if(i===curW||switchT>0) return;
   if(i===3&&!hasLaser()) return;
+  if(i===4&&(mod!=='ak'||infinityMode)) return;
   if(infinityMode&&i!==3) return;
   laserOff();
   touchUI.fireBlocked=false;
@@ -2073,7 +2216,7 @@ function tryFire(){
   if(switchT>0.15) return;
   const w=WEAPONS[curW];
   if(w.laser){
-    if(hasLaser()&&(infinityMode||player.hp>LASER_MIN_HP)) laserHeld=true;
+    if(hasLaser()&&(infinityMode||mod==='beam'||player.hp>LASER_MIN_HP)) laserHeld=true;
     else if(hasLaser()) SFX.dry();
     return;
   }
@@ -2093,7 +2236,9 @@ function tryFire(){
   if(w.rocket){
     SFX.rocket(); spawnRocket();
   } else {
-    if(curW===0) SFX.rev(); else SFX.shotgun();
+    if(curW===0) SFX.rev();
+    else if(curW===4) SFX.ak();
+    else SFX.shotgun();
     const o=camera.position.clone();
     for(let i=0;i<w.pellets;i++){
       const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
@@ -2122,7 +2267,8 @@ function hitscan(o,d,dmg){
   else if(bt<maxD) sparks(hitP,3,0x2a241c);
 }
 function fireLaserTick(){
-  if(!infinityMode&&player.hp<=LASER_MIN_HP){
+  const freeBeam=infinityMode||mod==='beam';
+  if(!freeBeam&&player.hp<=LASER_MIN_HP){
     touchUI.fireBlocked=true;
     laserOff(); SFX.dry(); return;
   }
@@ -2137,7 +2283,7 @@ function fireLaserTick(){
   }
   const end=o.clone().addScaledVector(d,wallD);
   sparks(end,killed>0?4:2,0xff2b17);
-  if(!infinityMode){ player.hp-=LASER_COST; player.lastHurt=gameT; }
+  if(!freeBeam){ player.hp-=LASER_COST; player.lastHurt=gameT; }
   SFX.ltick();
   updateHUD();
 }
@@ -2320,12 +2466,17 @@ function updateHUD(){
       $('ui-echo').style.display='block';
     } else $('ui-echo').style.display='none';
   }
+  // активный модификатор
+  const mn=modName(mod);
+  const mt=mn?`модификатор · <b>${mn}</b>`:'';
+  if(mt!==lastMod){ lastMod=mt; $('ui-mod').innerHTML=mt; $('ui-mod').style.display=mt?'block':'none'; }
   const w=WEAPONS[curW];
   $('wpn-name').textContent=w.name;
   if(w.laser){
+    const freeBeam=infinityMode||mod==='beam';
     $('ammo-cur').textContent='∞';
-    $('ammo-mag').textContent=infinityMode?'∞':'hp';
-    $('reload-tag').textContent=(!infinityMode&&player.hp<=LASER_MIN_HP)?'нечем платить':'';
+    $('ammo-mag').textContent=freeBeam?'∞':'hp';
+    $('reload-tag').textContent=(!freeBeam&&player.hp<=LASER_MIN_HP)?'нечем платить':'';
   } else {
     $('ammo-cur').textContent=gunState[curW].ammo;
     $('ammo-mag').textContent=w.mag;
@@ -2338,9 +2489,9 @@ function updateHUD(){
     el.innerHTML=it; el.style.display=it?'block':'none';
   }
   if(platform==='mobile'){
-    for(let i=0;i<4;i++){
+    for(let i=0;i<5;i++){
       const el=$('t-w'+(i+1));
-      const show=(i<3&&!infinityMode)||(i===3&&hasLaser());
+      const show=(i<3&&!infinityMode)||(i===3&&hasLaser())||(i===4&&mod==='ak'&&!infinityMode);
       el.style.display=show?'flex':'none';
       el.classList.toggle('sel',curW===i);
     }
@@ -2470,7 +2621,7 @@ function knobTo(base,knob,cx,cy){
     e.preventDefault();
     if(state==='playing') startReload();
   });
-  for(let i=0;i<4;i++){
+  for(let i=0;i<5;i++){
     $('t-w'+(i+1)).addEventListener('pointerdown',e=>{
       e.preventDefault();
       if(state==='playing') switchWeapon(i);
@@ -2538,203 +2689,4 @@ function loop(){
     if(player.onGround&&spxz>1){
       player.bob+=spxz*dt*1.7;
       player.stepAcc+=spxz*dt;
-      if(player.stepAcc>2.6){ player.stepAcc=0; SFX.step(); }
-    }
-    if(!infinityMode&&depth>=7&&spxz<0.6&&player.onGround) whisperIdle+=dt;
-    else whisperIdle=0;
-    paral=clamp((whisperIdle-2.2)/4,0,1);
-    if(!infinityMode){
-      if(gameT-player.lastHurt>5&&player.hp<100)
-        player.hp=Math.min(100,player.hp+4.5*dt);
-      if(hasArmor()&&armor<100&&gameT-player.lastHurt>ARMOR_DELAY)
-        armor=Math.min(100,armor+ARMOR_REGEN*dt);
-    }
-
-    // --- камера ---
-    camera.position.set(player.pos.x,player.pos.y+EYE,player.pos.z);
-    camera.rotation.set(player.pitch,player.yaw,0);
-    if(shake>0.002){
-      camera.rotation.x+=rnd(-1,1)*shake*0.035;
-      camera.rotation.y+=rnd(-1,1)*shake*0.035;
-      camera.rotation.z+=rnd(-1,1)*shake*0.02;
-      shake*=Math.exp(-6*dt);
-    }
-    const baseFov=infinityMode?80:75;
-    const targetFov=baseFov+(running?5:0);
-    if(Math.abs(camera.fov-targetFov)>0.1){
-      camera.fov+=(targetFov-camera.fov)*Math.min(1,10*dt);
-      camera.updateProjectionMatrix();
-    }
-
-    // --- фонарь ---
-    if(playerLightBase>0){
-      playerLight.intensity=playerLightBase*
-        (0.93+0.05*Math.sin(gameT*6.1)+0.03*Math.sin(gameT*15.7));
-    } else playerLight.intensity=0;
-
-    // --- сенсорный огонь ---
-    if(platform==='mobile'&&touchUI.fireHeld){
-      const fw=WEAPONS[curW];
-      if(fw.laser){ if(!touchUI.fireBlocked) laserHeld=true; }
-      else tryFire();
-    }
-
-    // --- view-model ---
-    recoil*=Math.exp(-9*dt);
-    if(switchT>0) switchT-=dt;
-    const gm=gunModels[curW], st=gunState[curW];
-    let rp=0;
-    if(st.reloading>0){
-      st.reloading-=dt;
-      const pr=1-st.reloading/WEAPONS[curW].reload;
-      rp=-Math.sin(pr*Math.PI)*0.9;
-      if(st.reloading<=0){ st.ammo=WEAPONS[curW].mag; SFX.click(); updateHUD(); }
-    }
-    const sw=switchT>0?switchT/0.4:0;
-    const amp=gm.userData.bobAmp*Math.min(1,spxz/curWalk);
-    const laserActiveNow = curW===3&&hasLaser()&&laserHeld&&(infinityMode||player.hp>LASER_MIN_HP);
-    gunRig.position.set(
-      GUN_BASE.x+Math.sin(player.bob)*amp,
-      GUN_BASE.y-Math.abs(Math.cos(player.bob))*amp*1.4-sw*0.55+rp*0.18,
-      GUN_BASE.z+recoil*0.24+(laserActiveNow?Math.sin(gameT*50)*0.004:0)
-    );
-    gunRig.rotation.set(rp+recoil*0.35,0,recoil*0.06);
-    flashLight.intensity*=Math.exp(-26*dt);
-    if(flashLight.intensity<0.02)flashLight.intensity=0;
-    boomLight.intensity*=Math.exp(-8*dt);
-
-    // --- лазер игрока ---
-    if(laserActiveNow){
-      if(!laserOn){ laserOn=true; laserSound(true); laserBeam.visible=true; laserTickT=0; }
-      laserTickT-=dt;
-      if(laserTickT<=0){ laserTickT=LASER_TICK; fireLaserTick(); }
-      if(laserOn) updateLaserBeam();
-    } else if(laserOn){ laserOff(); }
-
-    // --- рассвет: толпа не редеет ---
-    if(infinityMode){
-      infSpawnT-=dt;
-      if(enemies.length<INF_ENEMIES&&infSpawnT<=0){
-        infSpawnT=0.9;
-        const ang=rnd(0,Math.PI*2), rr=rnd(26,64);
-        const ne=spawnEnemy(player.pos.x+Math.cos(ang)*rr, player.pos.z+Math.sin(ang)*rr, 17);
-        ne.flyY=clamp(player.pos.y+rnd(-10,14),2.5,52);
-        ne.center.y=ne.flyY;
-      }
-    }
-
-    updateEnemies(dt);
-    updateRockets(dt);
-    updateParticles(dt);
-    updatePickups(dt);
-    updateMoon(dt);
-    updateDyson(dt);
-
-    // маяк
-    if(levelGroup){
-      const b=levelGroup.userData.beacon;
-      b.material.opacity=0.18+Math.sin(gameT*2.2)*0.07;
-      const r=levelGroup.userData.ring;
-      r.scale.setScalar(1+Math.sin(gameT*2.2)*0.12);
-      r.rotation.z+=dt*0.8;
-    }
-    if(levelGroup) for(const o of levelGroup.children)
-      if(o.userData.sky){ o.rotation.y+=o.userData.spin*dt; o.rotation.x+=o.userData.spin*0.4*dt; }
-    if(starfield) starfield.rotation.y+=0.005*dt;
-    if(dawnRing){
-      dawnRing.material.opacity=0.75+0.15*Math.sin(gameT*0.7);
-      dawnGlow.material.opacity=0.2+0.07*Math.sin(gameT*0.5+1);
-    }
-
-    // --- выход: три судьбы луча ---
-    const reached = Math.hypot(player.pos.x-exitPos.x,player.pos.z-exitPos.z)<1.6
-      && Math.abs(player.pos.y-exitPos.y)<2.5;
-    if(reached){
-      if(infinityMode){
-        SFX.portal();
-        showDawn();
-      } else {
-        state='transition';
-        laserOff();
-        SFX.portal();
-        const gained=score-scoreAtLevelStart;
-        score+=100*depth;
-        if(depth>=17&&echo>=ECHO_GOAL){
-          showInfinityTransition();
-          setTimeout(()=>{
-            if(state!=='transition') return;
-            buildInfinityLevel(); resetPlayer();
-            if(platform==='mobile'||locked){ state='playing'; }
-            else { state='paused'; showPause(); }
-            document.getElementById('overlay').classList.add('hidden');
-          },1900);
-        } else if(depth>=24&&gained<=LOOP_MIN){
-          showLoopTransition();
-          setTimeout(()=>{
-            if(state!=='transition') return;
-            buildLevel(depth); resetPlayer();
-            if(platform==='mobile'||locked){ state='playing'; }
-            else { state='paused'; showPause(); }
-            document.getElementById('overlay').classList.add('hidden');
-          },1700);
-        } else {
-          const nextD=depth+1;
-          depth++; bestDepth=Math.max(bestDepth,depth);
-          player.hp=Math.min(100,player.hp+35);
-          showTransition(nextD);
-          setTimeout(()=>{
-            if(state!=='transition') return;
-            buildLevel(depth); resetPlayer();
-            if(platform==='mobile'||locked){ state='playing'; }
-            else { state='paused'; showPause(); }
-            document.getElementById('overlay').classList.add('hidden');
-          },1500);
-        }
-      }
-    }
-
-    if(dmgFlash>0){ dmgFlash-=dt*2.2; $('damage').style.opacity=Math.max(0,dmgFlash); }
-    else $('damage').style.opacity=0;
-
-    if(cooldown>0) cooldown-=dt;
-    updateHUD();
-  }
-  else if(state==='transition'||state==='dead'||state==='dawn'){
-    updateParticles(dt);
-    updateDyson(dt);
-  }
-
-  /* ---------- рендер в два прохода ----------
-     1) мир (обычная очистка буферов)
-     2) depth очищается → оружие рисуется поверх мира,
-        но с честным depth-тестом между собственными деталями */
-  renderer.autoClear=true;
-  renderer.render(scene,camera);
-  renderer.autoClear=false;
-  renderer.clearDepth();
-  if(gunCamera.fov!==camera.fov){
-    gunCamera.fov=camera.fov;
-    gunCamera.updateProjectionMatrix();
-  }
-  renderer.render(gunScene,gunCamera);
-  renderer.autoClear=true;
-}
-loop();
-
-addEventListener('resize',()=>{
-  camera.aspect=innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  gunCamera.aspect=innerWidth/innerHeight;
-  gunCamera.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight);
-});
-addEventListener('orientationchange',()=>setTimeout(()=>{
-  camera.aspect=innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  gunCamera.aspect=innerWidth/innerHeight;
-  gunCamera.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight);
-},250));
-</script>
-</body>
-</html>
+      if(player.stepAcc>2.6){ player.stepAcc
