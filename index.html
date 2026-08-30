@@ -6,23 +6,16 @@
 <title>БЕССОННИЦА — лабиринт, из которого не выходят</title>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;700;900&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --red:#e02414; --ink:#14120f; --paper:#e8e2d4;
-    --blue:#2f7cff;
-  }
+  :root{ --red:#e02414; --ink:#14120f; --paper:#e8e2d4; --blue:#2f7cff; }
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;overflow:hidden;background:#d8d2c2;
     font-family:'IBM Plex Mono',monospace;cursor:crosshair;user-select:none;
     -webkit-user-select:none;-webkit-tap-highlight-color:transparent}
   canvas{display:block}
-
-  #frame{position:fixed;inset:14px;border:1px solid rgba(20,18,15,.28);pointer-events:none;z-index:5;
-    transition:border-color 1.2s}
-  #frame::before,#frame::after{content:'';position:absolute;width:14px;height:14px;border:2px solid var(--ink);
-    transition:border-color 1.2s}
+  #frame{position:fixed;inset:14px;border:1px solid rgba(20,18,15,.28);pointer-events:none;z-index:5;transition:border-color 1.2s}
+  #frame::before,#frame::after{content:'';position:absolute;width:14px;height:14px;border:2px solid var(--ink);transition:border-color 1.2s}
   #frame::before{top:-2px;left:-2px;border-right:none;border-bottom:none}
   #frame::after{bottom:-2px;right:-2px;border-left:none;border-top:none}
-
   #crosshair{position:fixed;left:50%;top:50%;width:0;height:0;z-index:6;pointer-events:none;opacity:0;transition:opacity .2s}
   body.playing #crosshair{opacity:1}
   #crosshair span{position:absolute;background:var(--ink);transition:background 1.2s}
@@ -33,11 +26,9 @@
   #crosshair.hit span{background:var(--red)}
   #crosshair.hit{animation:hitmk .14s ease-out}
   @keyframes hitmk{0%{transform:scale(1.6)}100%{transform:scale(1)}}
-
   #vignette{position:fixed;inset:0;pointer-events:none;z-index:4}
   #damage{position:fixed;inset:0;pointer-events:none;z-index:7;opacity:0;
     background:radial-gradient(ellipse at center,transparent 42%,rgba(224,36,20,.55) 100%)}
-
   #hud{position:fixed;inset:0;pointer-events:none;z-index:6;color:var(--ink);
     text-transform:uppercase;letter-spacing:.14em;font-size:13px;opacity:0;transition:opacity .3s,color 1.2s}
   body.playing #hud{opacity:1}
@@ -61,12 +52,10 @@
   #ammo{font-family:'Unbounded';font-weight:700;font-size:38px;line-height:1}
   #ammo .sep{opacity:.35;font-weight:400;margin:0 4px}
   #ammo .mag{font-size:18px;opacity:.5}
-  #reload-tag{font-size:11px;color:var(--red);letter-spacing:.3em;height:14px;margin-top:4px;
-    animation:blink .5s steps(2) infinite}
+  #reload-tag{font-size:11px;color:var(--red);letter-spacing:.3em;height:14px;margin-top:4px;animation:blink .5s steps(2) infinite}
   @keyframes blink{to{opacity:.15}}
   #hint{position:absolute;bottom:110px;left:50%;transform:translateX(-50%);
     font-size:12px;letter-spacing:.3em;opacity:.6;transition:opacity 1.2s;text-align:center;width:90%}
-
   body.night #hud{color:#e8e2d4}
   body.night #hp-fill{background:#e8e2d4}
   body.night #hp-bar{background:rgba(232,226,212,.16)}
@@ -74,8 +63,6 @@
   body.night #frame::before,body.night #frame::after{border-color:#e8e2d4}
   body.night #crosshair span{background:#e8e2d4}
   body.night #ui-instab{color:#ff4a38}
-
-  /* ---------- мобильный HUD ---------- */
   body.touch #hud-tl{font-size:11px;line-height:1.7;top:22px;left:20px}
   body.touch #hud-bl{top:20px;bottom:auto;right:76px;left:auto;text-align:right}
   body.touch #hp-num{font-size:25px}
@@ -84,21 +71,16 @@
   body.touch #ammo{font-size:21px}
   body.touch #wpn-name{font-size:10px}
   body.touch #hint{bottom:41%;font-size:10.5px}
-
-  /* ---------- сенсорное управление ---------- */
-  #touch-ui{position:fixed;inset:0;z-index:8;display:none;pointer-events:none;
-    -webkit-touch-callout:none}
+  #touch-ui{position:fixed;inset:0;z-index:8;display:none;pointer-events:none;-webkit-touch-callout:none}
   body.touch.playing #touch-ui{display:block}
   .tbtn,.tpad{position:fixed;display:flex;align-items:center;justify-content:center;
     border:1.5px solid rgba(20,18,15,.55);background:rgba(232,226,212,.3);color:var(--ink);
     touch-action:none;pointer-events:auto;user-select:none;-webkit-user-select:none;
     -webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}
-  body.night .tbtn,body.night .tpad{border-color:rgba(232,226,212,.5);color:#e8e2d4;
-    background:rgba(15,18,28,.25)}
+  body.night .tbtn,body.night .tpad{border-color:rgba(232,226,212,.5);color:#e8e2d4;background:rgba(15,18,28,.25)}
   .tpad{border-radius:50%}
   .tknob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;
-    border-radius:50%;background:rgba(20,18,15,.28);border:1.5px solid rgba(20,18,15,.5);
-    pointer-events:none}
+    border-radius:50%;background:rgba(20,18,15,.28);border:1.5px solid rgba(20,18,15,.5);pointer-events:none}
   body.night .tknob{background:rgba(232,226,212,.22);border-color:rgba(232,226,212,.55)}
   .t-chev{position:absolute;left:50%;transform:translateX(-50%);width:20px;height:20px;opacity:.4;pointer-events:none}
   .t-chev.up{top:11px}
@@ -106,8 +88,7 @@
   #t-look{right:22px;bottom:64px;width:148px;height:148px}
   #t-move{left:22px;bottom:64px;width:126px;height:126px}
   #t-knob-m{width:50px;height:50px;margin:-25px 0 0 -25px}
-  #t-fire{left:164px;bottom:80px;width:94px;height:94px;border-radius:50%;
-    border-color:rgba(224,36,20,.8);color:var(--red)}
+  #t-fire{left:164px;bottom:80px;width:94px;height:94px;border-radius:50%;border-color:rgba(224,36,20,.8);color:var(--red)}
   #t-fire svg{width:42%;height:42%}
   #t-fire.on{background:rgba(224,36,20,.32)}
   #t-jump{left:272px;bottom:158px;width:58px;height:58px;border-radius:50%}
@@ -115,14 +96,12 @@
   #t-pause{top:14px;right:14px;width:44px;height:44px;border-radius:10px}
   #t-wcol{position:fixed;right:22px;top:92px;display:flex;flex-direction:column;gap:7px;pointer-events:auto}
   #t-wcol .tbtn{position:relative}
-  .wbtn{width:46px;height:46px;border-radius:10px;
-    font-family:'Unbounded';font-weight:700;font-size:15px}
+  .wbtn{width:46px;height:46px;border-radius:10px;font-family:'Unbounded';font-weight:700;font-size:15px}
   .wbtn.sel{background:var(--red);border-color:var(--red);color:#fff}
   #t-reload{width:46px;height:46px;border-radius:10px}
-  #rotate-hint{position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:30;
-    display:none;background:rgba(20,18,15,.85);color:#e8e2d4;padding:14px 22px;
-    font-size:11px;letter-spacing:.24em;text-transform:uppercase;pointer-events:none;
-    border:1px solid rgba(232,226,212,.35);text-align:center}
+  #rotate-hint{position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:30;display:none;
+    background:rgba(20,18,15,.85);color:#e8e2d4;padding:14px 22px;font-size:11px;letter-spacing:.24em;
+    text-transform:uppercase;pointer-events:none;border:1px solid rgba(232,226,212,.35);text-align:center}
   @media (orientation:portrait){ body.touch #rotate-hint{display:block} }
   @media (max-height:430px){
     .wbtn,#t-reload{width:40px;height:40px;font-size:13px}
@@ -134,7 +113,6 @@
     #t-fire{width:82px;height:82px;left:148px;bottom:56px}
     #t-jump{left:244px;bottom:132px;width:52px;height:52px}
   }
-
   #overlay{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
     background:rgba(232,226,212,.9);backdrop-filter:blur(6px);color:var(--ink);text-align:center;
     transition:opacity .5s;cursor:pointer}
@@ -160,7 +138,6 @@
   #overlay .lvl-btn.cur:hover{color:#fff}
   #overlay .lvl-btn.inf{border-color:var(--blue);color:var(--blue)}
   #overlay .lvl-btn.inf:hover{background:var(--blue);border-color:var(--blue);color:#fff;transform:translateY(-2px)}
-  /* платформа / продолжение / модификаторы */
   #overlay .plat-row{display:flex;gap:14px;justify-content:center;margin-top:36px;flex-wrap:wrap}
   #overlay .plat-btn{font-family:'IBM Plex Mono',monospace;padding:16px 22px;background:none;
     border:1px solid rgba(20,18,15,.45);color:var(--ink);cursor:pointer;
@@ -168,6 +145,7 @@
     text-transform:uppercase;letter-spacing:.14em;transition:all .13s}
   #overlay .plat-btn b{font-family:'Unbounded';font-weight:700;font-size:15px;letter-spacing:.06em}
   #overlay .plat-btn span{font-size:10.5px;opacity:.6}
+  #overlay .plat-btn i{font-style:normal;font-size:9.5px;color:var(--red);letter-spacing:.24em}
   #overlay .plat-btn:hover{background:var(--ink);color:var(--paper);transform:translateY(-2px)}
   #overlay .plat-btn.sel{border-color:var(--red);box-shadow:inset 0 0 0 1px var(--red)}
   #overlay .plat-btn.sel b{color:var(--red)}
@@ -177,8 +155,6 @@
     #overlay .box{padding:22px;max-width:94vw}
     #overlay .sub{font-size:10.5px;margin-top:10px}
     #overlay .quote{font-size:10px;margin-top:16px}
-    #overlay .ctrl{font-size:10.5px;padding:10px 0;margin-top:22px}
-    #overlay .ctrl b{min-width:130px}
     #overlay .stat{font-size:11px}
     #overlay .plat-btn{padding:12px 14px}
     #overlay .plat-btn b{font-size:12px}
@@ -217,7 +193,6 @@
   <div id="hint">найди белый столб света — он ведёт глубже</div>
 </div>
 
-<!-- сенсорное управление -->
 <div id="touch-ui">
   <div id="t-pause" class="tbtn">
     <svg viewBox="0 0 24 24"><path d="M9 5v14M15 5v14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
@@ -252,25 +227,18 @@
 <div id="overlay"><div class="box" id="overlay-box"></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/FXAAShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 <script>
 'use strict';
 /* ============================================================
-   БЕССОННИЦА — сюрреалистичный FPS в одном файле
-   титул: выбор платформы — ПК или МОБИЛЬНОЕ
-   сохранение: localStorage — сон помнит глубину и счёт
-   награда за рассвет: модификатор на следующий сон —
-     лунная гравитация / бесконечный луч / АК-47
-   оружие: отдельный проход рендера, АК-47 — автоогонь
-   1–7:   небо темнеет до ночи; с 7-й — шёпот
-   3+:    пулемётчики — очереди коротких лучей
-   10:    стены дышат
-   11–16: лабиринт перестраивает сам себя
-   15:    лазер (оружие за здоровье)
-   16:    броня — сфера Дайсона
-   17+:   красная луна; эхо сна → 2300 = рассвет
-   24+:   петля — меньше 50 очков за проход = та же глубина
-   РАССВЕТ: бессмертие, лунная гравитация, фигуры-платформы
-   секрет: ПК — Shift×5 · тач — 5 тапов по заголовку
+   БЕССОННИЦА — часть 1 из 2
+   (пост-обработка: HDR-bloom + зерно сна + FXAA)
    ============================================================ */
 
 // ---------- константы ----------
@@ -291,7 +259,6 @@ const LOOP_MIN = 50;
 const INF_GRAV = 5, INF_JUMP = 9.5, INF_WALK = 9.5, INF_RUN = 14;
 const INF_ENEMIES = 24;
 const TOUCH_SENS = 0.0062;
-// модификатор «лунная гравитация»
 const MOONG_GRAV = 7, MOONG_JUMP = 9.5;
 const SAVE_KEY = 'insomnia_save_v1';
 
@@ -304,8 +271,7 @@ const easeInOut = t=>t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
 function saveGame(){
   try{
     localStorage.setItem(SAVE_KEY,JSON.stringify({
-      d:depth, s:score, k:kills, de:deaths, e:echo, b:bestDepth,
-      m:mod, inf:infinityMode
+      d:depth, s:score, k:kills, de:deaths, e:echo, b:bestDepth, m:mod, inf:infinityMode
     }));
   }catch(err){}
 }
@@ -616,6 +582,49 @@ playerLight.position.set(0, -0.1, 0);
 camera.add(playerLight);
 let playerLightBase = 0;
 
+/* ---------- пост-обработка ----------
+   HDR-буфер + порог 1.0: светится только то, что ярче единицы
+   (лучи, луна, маяк — но не стены). Затем зерно+виньетка и FXAA.
+   На старых WebGL1-устройствах — мягкий LDR-режим. */
+const isGL2 = renderer.capabilities.isWebGL2;
+const composer = isGL2
+  ? new THREE.EffectComposer(renderer,
+      new THREE.WebGLRenderTarget(innerWidth,innerHeight,{type:THREE.HalfFloatType}))
+  : new THREE.EffectComposer(renderer);
+composer.addPass(new THREE.RenderPass(scene,camera));
+const bloomPass = new THREE.UnrealBloomPass(
+  new THREE.Vector2(innerWidth,innerHeight),
+  isGL2?0.9:0.55, 0.55, isGL2?1.0:0.85);
+composer.addPass(bloomPass);
+const dreamPass = new THREE.ShaderPass({
+  uniforms:{ tDiffuse:{value:null}, uTime:{value:0}, uNight:{value:0.28} },
+  vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader:[
+    'uniform sampler2D tDiffuse;uniform float uTime;uniform float uNight;varying vec2 vUv;',
+    'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+    'void main(){',
+    '  vec4 c=texture2D(tDiffuse,vUv);',
+    '  c.rgb+=(hash(vUv*913.0+fract(uTime)*61.0)-0.5)*0.045;',
+    '  c.rgb*=1.0-uNight*pow(length(vUv-0.5)*1.35,2.0);',
+    '  gl_FragColor=c;',
+    '}'
+  ].join('\n')
+});
+composer.addPass(dreamPass);
+const fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
+composer.addPass(fxaaPass);
+function updateFXAA(){
+  const pr=renderer.getPixelRatio();
+  fxaaPass.material.uniforms['resolution'].value.set(
+    1/(innerWidth*pr), 1/(innerHeight*pr));
+}
+composer.setPixelRatio(renderer.getPixelRatio());
+composer.setSize(innerWidth,innerHeight);
+updateFXAA();
+// HDR-цвет: всё, что должно светиться, делаем ярче 1.0
+function glow(hex,mul){ const c=new THREE.Color(hex); c.multiplyScalar(mul); return c; }
+
+// чёрное солнце / красное затмение
 const SUNDIR = new THREE.Vector3(-0.32,0.42,-0.85).normalize();
 const sunGroup = new THREE.Group();
 const sunDisc = new THREE.Mesh(
@@ -624,7 +633,7 @@ const sunDisc = new THREE.Mesh(
 );
 const sunHalo = new THREE.Mesh(
   new THREE.RingGeometry(31,36,64),
-  new THREE.MeshBasicMaterial({color:RED, transparent:true, opacity:0, fog:false,
+  new THREE.MeshBasicMaterial({color:glow(RED,3), transparent:true, opacity:0, fog:false,
     side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false})
 );
 sunHalo.position.z = 0.5;
@@ -697,9 +706,8 @@ function applyAtmosphere(d){
   gunHemi.color.set(new THREE.Color(0xfff6e6).lerp(new THREE.Color(0x9fb4de), NIGHT));
   gunDir.intensity = 0.6 - 0.25*NIGHT;
   gunDir.color.set(0xffffff);
+  dreamPass.uniforms.uNight.value = 0.26 + 0.34*NIGHT;
   document.body.classList.toggle('night', NIGHT >= 0.5);
-  document.getElementById('vignette').style.background =
-    `radial-gradient(ellipse at center, transparent ${62-18*NIGHT}%, rgba(8,7,10,${0.42+0.25*NIGHT}) 100%)`;
 }
 function applyInfinityAtmosphere(){
   scene.background = new THREE.Color(0x0a0d1a);
@@ -717,9 +725,8 @@ function applyInfinityAtmosphere(){
   gunHemi.color.set(0xffd9b0);
   gunDir.intensity = 0.7;
   gunDir.color.set(0xffb37a);
+  dreamPass.uniforms.uNight.value = 0.24;
   document.body.classList.add('night');
-  document.getElementById('vignette').style.background =
-    'radial-gradient(ellipse at center, transparent 66%, rgba(8,7,10,.4) 100%)';
 }
 
 // ---------- состояние ----------
@@ -735,17 +742,14 @@ let platforms=[], dawnRing=null, dawnGlow=null;
 let infSpawnT=0;
 let curGrav=GRAV, curJump=JUMP, curWalk=WALK, curRun=RUN;
 let platform='pc';
-// модификатор текущего сна (награда за рассвет)
 let mod=null;
 let mouseHeld=false;
 let lastMod='';
 const touchUI={lookId:null,moveId:null,moveX:0,moveY:0,
   fireHeld:false,jumpHeld:false,fireBlocked:false};
 
-// луч доступен с 15-й, всегда на рассвете, всегда с модификатором «бесконечный луч»
 const hasLaser = ()=>depth>=15||infinityMode||mod==='beam';
 const hasArmor = ()=>depth>=16&&!infinityMode;
-// список доступных оружий (для колеса и клавиш)
 function availWeapons(){
   const l=[0,1,2];
   if(hasLaser()) l.push(3);
@@ -899,12 +903,12 @@ function showIntro(){
       <button class="plat-btn" data-plat="pc">
         <b>ПК</b>
         <span>wasd · мышь · лкм · 1–5 · r</span>
-        ${touchable?'':'<i style="font-style:normal;font-size:9.5px;color:var(--red);letter-spacing:.24em">рекомендуется</i>'}
+        ${touchable?'':'<i>рекомендуется</i>'}
       </button>
       <button class="plat-btn" data-plat="mobile">
         <b>МОБИЛЬНОЕ</b>
         <span>стик · кнопки · автоогонь</span>
-        ${touchable?'<i style="font-style:normal;font-size:9.5px;color:var(--red);letter-spacing:.24em">рекомендуется</i>':''}
+        ${touchable?'<i>рекомендуется</i>':''}
       </button>
     </div>
     <div class="quote">небо темнеет с каждой глубиной · после седьмой — ночь и шёпот<br>
@@ -965,7 +969,6 @@ function showDawn(){
     сон пройден. выбери, что останется с тобой в следующем.</div>
     <div class="go">[ выбрать награду ]</div>`);
 }
-// экран продолжения сохранённого сна
 function showContinue(sv){
   state='continue';
   document.body.classList.remove('playing');
@@ -984,7 +987,6 @@ function showContinue(sv){
     </div>
     <div class="quote">лабиринт сгенерирован заново. счёт и глубина — твои.</div>`);
 }
-// выбор модификатора после рассвета
 function showModSelect(){
   state='modselect';
   document.body.classList.remove('playing');
@@ -1043,7 +1045,6 @@ function choosePlatform(p){
   document.body.classList.toggle('touch', p==='mobile');
   if(p==='mobile'){
     try{ renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); }catch(err){}
-    renderer.setSize(innerWidth,innerHeight);
     try{
       if(document.documentElement.requestFullscreen)
         document.documentElement.requestFullscreen().catch(()=>{});
@@ -1054,8 +1055,11 @@ function choosePlatform(p){
     }catch(err){}
   } else {
     try{ renderer.setPixelRatio(Math.min(devicePixelRatio,2)); }catch(err){}
-    renderer.setSize(innerWidth,innerHeight);
   }
+  renderer.setSize(innerWidth,innerHeight);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(innerWidth,innerHeight);
+  updateFXAA();
   const sv=loadSave();
   if(sv){ showContinue(sv); }
   else { startNewRun(); }
@@ -1068,7 +1072,6 @@ document.getElementById('overlay').addEventListener('click',e=>{
     choosePlatform(plat.dataset.plat);
     return;
   }
-  // продолжение сохранённого сна
   const cb=e.target.closest('[data-cont]');
   if(cb&&state==='continue'){
     if(cb.dataset.cont==='1'){
@@ -1086,7 +1089,6 @@ document.getElementById('overlay').addEventListener('click',e=>{
     startNewRun();
     return;
   }
-  // выбор модификатора после рассвета
   const mb=e.target.closest('.mod-btn');
   if(mb&&state==='modselect'){
     mod=mb.dataset.mod;
@@ -1231,7 +1233,7 @@ function raySphere(o,d,c,r){
   const t=-b-Math.sqrt(disc);
   return t>0?t:-1;
 }
-
+/* ===== КОНЕЦ ЧАСТИ 1 — напиши «дальше», пришлю часть 2 ===== */
 // ---------- постройка уровня ----------
 const enemies=[], rockets=[], pickups=[], particles=[];
 const particleGroup=new THREE.Group(); scene.add(particleGroup);
@@ -1276,7 +1278,6 @@ function clearEnemiesAndFx(){
 function buildLevel(d){
   disposeLevel();
   infinityMode=false;
-  // физика уровня: модификатор «лунная гравитация» действует на весь сон
   curGrav = mod==='moon' ? MOONG_GRAV : GRAV;
   curJump = mod==='moon' ? MOONG_JUMP : JUMP;
   curWalk=WALK; curRun=RUN;
@@ -1333,14 +1334,14 @@ function buildLevel(d){
 
   const beacon=new THREE.Mesh(
     new THREE.CylinderGeometry(0.9,0.9,90,20,1,true),
-    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.22,
+    new THREE.MeshBasicMaterial({color:glow(0xffffff,5),transparent:true,opacity:0.22,
       depthWrite:false,fog:false,side:THREE.DoubleSide})
   );
   beacon.position.set(exitPos.x,45,exitPos.z);
   beacon.renderOrder=-1;
   levelGroup.add(beacon);
   const ring=new THREE.Mesh(new THREE.TorusGeometry(1.3,0.06,8,40),
-    new THREE.MeshBasicMaterial({color:0xffffff,fog:false}));
+    new THREE.MeshBasicMaterial({color:glow(0xffffff,1.6),fog:false}));
   ring.rotation.x=Math.PI/2; ring.position.set(exitPos.x,0.08,exitPos.z);
   levelGroup.add(ring);
   const beaconLight=new THREE.PointLight(0xffffff, NIGHT*1.6, 20, 1);
@@ -1376,7 +1377,7 @@ function buildLevel(d){
     }
     const g=new THREE.BufferGeometry();
     g.setAttribute('position',new THREE.BufferAttribute(pos,3));
-    starfield=new THREE.Points(g,new THREE.PointsMaterial({color:0xdfe6ff,
+    starfield=new THREE.Points(g,new THREE.PointsMaterial({color:glow(0xdfe6ff,1.3),
       size:1.6,sizeAttenuation:false,transparent:true,opacity:0.85*NIGHT,fog:false}));
     starfield.position.set(fw/2,0,fh/2);
     levelGroup.add(starfield);
@@ -1384,17 +1385,17 @@ function buildLevel(d){
 
   if(d>=17){
     const disc=new THREE.Mesh(new THREE.CircleGeometry(26,48),
-      new THREE.MeshBasicMaterial({color:0xff1e08,fog:false}));
+      new THREE.MeshBasicMaterial({color:glow(0xff1e08,3.5),fog:false}));
     const halo=new THREE.Mesh(new THREE.RingGeometry(27,34,64),
-      new THREE.MeshBasicMaterial({color:0xff2b17,transparent:true,opacity:0.7,fog:false,
+      new THREE.MeshBasicMaterial({color:glow(0xff2b17,3),transparent:true,opacity:0.7,fog:false,
         side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
     const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,1,8),
-      new THREE.MeshBasicMaterial({color:0xff2b17,transparent:true,opacity:0.95,fog:false,
+      new THREE.MeshBasicMaterial({color:glow(0xff2b17,3.5),transparent:true,opacity:0.95,fog:false,
         blending:THREE.AdditiveBlending,depthWrite:false}));
     const line=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,1,6),
       new THREE.MeshBasicMaterial({color:0xff2b17,transparent:true,opacity:0.4,fog:false}));
     const gring=new THREE.Mesh(new THREE.TorusGeometry(1,0.07,8,40),
-      new THREE.MeshBasicMaterial({color:0xff2b17,transparent:true,opacity:0.6,fog:false}));
+      new THREE.MeshBasicMaterial({color:glow(0xff2b17,2),transparent:true,opacity:0.6,fog:false}));
     gring.rotation.x=Math.PI/2;
     beam.visible=false; line.visible=false; gring.visible=false;
     levelGroup.add(disc,halo,beam,line,gring);
@@ -1443,7 +1444,7 @@ function buildLevel(d){
     spawnEnemy((x+0.5)*CS,(z+0.5)*CS,d);
   }
 
-  saveGame(); // сон запомнил эту глубину
+  saveGame();
 }
 
 // ---------- уровень «РАССВЕТ» ----------
@@ -1489,13 +1490,13 @@ function buildInfinityLevel(){
   levelGroup.add(floor);
 
   dawnRing=new THREE.Mesh(new THREE.RingGeometry(240,246,96),
-    new THREE.MeshBasicMaterial({color:0xffb37a,transparent:true,opacity:0.85,fog:false,
+    new THREE.MeshBasicMaterial({color:glow(0xffb37a,2),transparent:true,opacity:0.85,fog:false,
       side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
   dawnRing.rotation.x=-Math.PI/2;
   dawnRing.position.set(0,22,0);
   levelGroup.add(dawnRing);
   dawnGlow=new THREE.Mesh(new THREE.RingGeometry(246,330,96),
-    new THREE.MeshBasicMaterial({color:0xff8a4a,transparent:true,opacity:0.22,fog:false,
+    new THREE.MeshBasicMaterial({color:glow(0xff8a4a,1.8),transparent:true,opacity:0.22,fog:false,
       side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
   dawnGlow.rotation.x=-Math.PI/2;
   dawnGlow.position.set(0,20,0);
@@ -1511,7 +1512,7 @@ function buildInfinityLevel(){
   }
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.BufferAttribute(pos,3));
-  starfield=new THREE.Points(g,new THREE.PointsMaterial({color:0xdfe6ff,
+  starfield=new THREE.Points(g,new THREE.PointsMaterial({color:glow(0xdfe6ff,1.3),
     size:1.4,sizeAttenuation:false,transparent:true,opacity:0.3,fog:false}));
   levelGroup.add(starfield);
 
@@ -1544,14 +1545,14 @@ function buildInfinityLevel(){
 
   const beacon=new THREE.Mesh(
     new THREE.CylinderGeometry(0.9,0.9,90,20,1,true),
-    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.22,
+    new THREE.MeshBasicMaterial({color:glow(0xffffff,5),transparent:true,opacity:0.22,
       depthWrite:false,fog:false,side:THREE.DoubleSide})
   );
   beacon.position.set(exitPos.x,exitPos.y+45,exitPos.z);
   beacon.renderOrder=-1;
   levelGroup.add(beacon);
   const ring=new THREE.Mesh(new THREE.TorusGeometry(1.3,0.06,8,40),
-    new THREE.MeshBasicMaterial({color:0xffffff,fog:false}));
+    new THREE.MeshBasicMaterial({color:glow(0xffffff,1.6),fog:false}));
   ring.rotation.x=Math.PI/2; ring.position.set(exitPos.x,exitPos.y+0.1,exitPos.z);
   levelGroup.add(ring);
   const beaconLight=new THREE.PointLight(0xffffff, 1.8, 26, 1);
@@ -1570,7 +1571,7 @@ function buildInfinityLevel(){
     spawnEnemy(Math.cos(ang)*rr,Math.sin(ang)*rr,17);
   }
 
-  saveGame(); // сон запомнил даже рассвет
+  saveGame();
 }
 
 function resetPlayer(){
@@ -1592,6 +1593,7 @@ function resetPlayer(){
   hint.textContent =
     infinityMode ? 'бессмертие. толпа ждёт. прыгай по фигурам к свету — он вернёт тебя в первый сон' :
     mod==='beam' ? 'бесконечный луч — кнопка [4]. он больше не ест тебя' :
+    mod==='ak' ? 'ак-47 — кнопка [5]. удерживай огонь' :
     depth>=17 ? `луна красная. эхо сна ${echo}/${ECHO_GOAL} — рассвет ждёт` :
     depth>=16 ? 'синие кольца защищают. пока вращаются' :
     depth>=15 ? 'лазер — кнопка [4]. каждая секунда стоит здоровья' :
@@ -1796,14 +1798,14 @@ function pickType(d){
 }
 function spawnEnemy(x,z,d){
   const t=ETYPES[pickType(d)];
-  const mat=new THREE.MeshLambertMaterial({color:0x1c0503,emissive:RED,emissiveIntensity:0.5});
+  const mat=new THREE.MeshLambertMaterial({color:0x1c0503,emissive:RED,emissiveIntensity:3.4});
   const mesh=new THREE.Mesh(t.geo,mat);
   mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(t.geo),
     new THREE.LineBasicMaterial({color:0x0d0b09})));
   const aim=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.016,1,5),
     new THREE.MeshBasicMaterial({color:RED,transparent:true,opacity:0.55,fog:false}));
   const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,1,6),
-    new THREE.MeshBasicMaterial({color:0xff2b17,fog:false}));
+    new THREE.MeshBasicMaterial({color:glow(0xff2b17,3),fog:false}));
   aim.visible=false; beam.visible=false;
   scene.add(aim); scene.add(beam);
   eGroup.add(mesh);
@@ -1874,7 +1876,7 @@ function updateEnemies(dt){
     e.phase+=dt;
     if(e.spawnT>0){ e.spawnT-=dt; e.mesh.scale.setScalar(clamp(1-e.spawnT/0.5,0.01,1)); }
     e.flash=Math.max(0,e.flash-dt*5);
-    e.mesh.material.emissiveIntensity=0.5+NIGHT*0.45+e.flash*1.2;
+    e.mesh.material.emissiveIntensity=3.4+NIGHT*0.9+e.flash*2;
     const dx=player.pos.x-e.center.x, dz=player.pos.z-e.center.z;
     const dist=Math.hypot(dx,dz)||0.001;
     const los=dist<60?LOS(e.center.x,e.center.z,player.pos.x,player.pos.z):false;
@@ -2006,13 +2008,13 @@ const dysonGroup=new THREE.Group();
 let dysonR1,dysonR2,dysonR3,dysonOrbs;
 (function buildDyson(){
   const mk=(r,t)=>new THREE.Mesh(new THREE.TorusGeometry(r,t,8,48),
-    new THREE.MeshBasicMaterial({color:BLUE,transparent:true,opacity:0.6,fog:false,
+    new THREE.MeshBasicMaterial({color:glow(BLUE,2.2),transparent:true,opacity:0.6,fog:false,
       blending:THREE.AdditiveBlending,depthWrite:false}));
   dysonR1=mk(1.05,0.02); dysonR1.rotation.x=1.1;
   dysonR2=mk(1.3,0.014);  dysonR2.rotation.set(-0.6,0.7,0);
   dysonR3=mk(0.85,0.01);  dysonR3.rotation.set(0.3,0,1.2);
   dysonOrbs=new THREE.Group();
-  const om=new THREE.MeshBasicMaterial({color:0x9dc1ff,fog:false,
+  const om=new THREE.MeshBasicMaterial({color:glow(0x9dc1ff,2),fog:false,
     blending:THREE.AdditiveBlending,depthWrite:false});
   [[1.15,0,0],[-0.6,0,1.0],[-0.6,0,-1.0]].forEach(p=>{
     const o=new THREE.Mesh(new THREE.OctahedronGeometry(0.07),om);
@@ -2079,8 +2081,6 @@ const gunState=WEAPONS.map((w,i)=>({w:i,ammo:w.mag,reloading:0}));
 let curW=0, cooldown=0, switchT=0, recoil=0;
 let laserHeld=false, laserOn=false, laserTickT=0;
 
-// материалы оружия — обычные, с depth-тестом:
-// корректное взаимное перекрытие деталей даёт второй проход рендера
 function vmMat(c,e){ const m=new THREE.MeshLambertMaterial({color:c});
   if(e)m.emissive=new THREE.Color(e),m.emissiveIntensity=0.7;
   return m; }
@@ -2184,7 +2184,7 @@ flashLight.position.set(0.42,-0.3,-1.4); camera.add(flashLight);
 const boomLight=new THREE.PointLight(0xff7038,0,30); scene.add(boomLight);
 
 const laserBeam=new THREE.Mesh(new THREE.CylinderGeometry(1,1,1,8),
-  new THREE.MeshBasicMaterial({color:0xff2b17,transparent:true,opacity:0.8,fog:false,
+  new THREE.MeshBasicMaterial({color:glow(0xff2b17,3),transparent:true,opacity:0.8,fog:false,
     blending:THREE.AdditiveBlending,depthWrite:false}));
 laserBeam.visible=false;
 scene.add(laserBeam);
@@ -2397,7 +2397,7 @@ function sparks(pos,n,color){
 // ---------- подборы ----------
 function spawnPickup(x,z){
   const m=new THREE.Mesh(new THREE.OctahedronGeometry(0.28),
-    new THREE.MeshLambertMaterial({color:0xf5efe2,emissive:0xffffff,emissiveIntensity:0.35}));
+    new THREE.MeshLambertMaterial({color:0xf5efe2,emissive:0xffffff,emissiveIntensity:2.4}));
   m.position.set(x,0.8,z);
   levelGroup.add(m);
   pickups.push({m,x,z,t:25});
@@ -2466,7 +2466,6 @@ function updateHUD(){
       $('ui-echo').style.display='block';
     } else $('ui-echo').style.display='none';
   }
-  // активный модификатор
   const mn=modName(mod);
   const mt=mn?`модификатор · <b>${mn}</b>`:'';
   if(mt!==lastMod){ lastMod=mt; $('ui-mod').innerHTML=mt; $('ui-mod').style.display=mt?'block':'none'; }
@@ -2640,6 +2639,7 @@ function loop(){
 
   sunGroup.position.copy(camera.position).addScaledVector(SUNDIR,340);
   sunGroup.quaternion.copy(camera.quaternion);
+  dreamPass.uniforms.uTime.value+=dt;
   updateBeaconHum(dt);
   updateWhispers(dt);
 
@@ -2858,10 +2858,9 @@ function loop(){
   }
 
   /* ---------- рендер в два прохода ----------
-     1) мир · 2) depth очищается → оружие поверх стен,
-     но с честным depth-тестом между собственными деталями */
-  renderer.autoClear=true;
-  renderer.render(scene,camera);
+     1) мир через композер: bloom → зерно сна → FXAA
+     2) depth очищается → оружие напрямую, поверх всего */
+  composer.render();
   renderer.autoClear=false;
   renderer.clearDepth();
   if(gunCamera.fov!==camera.fov){
@@ -2879,6 +2878,8 @@ addEventListener('resize',()=>{
   gunCamera.aspect=innerWidth/innerHeight;
   gunCamera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
+  composer.setSize(innerWidth,innerHeight);
+  updateFXAA();
 });
 addEventListener('orientationchange',()=>setTimeout(()=>{
   camera.aspect=innerWidth/innerHeight;
@@ -2886,6 +2887,8 @@ addEventListener('orientationchange',()=>setTimeout(()=>{
   gunCamera.aspect=innerWidth/innerHeight;
   gunCamera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
+  composer.setSize(innerWidth,innerHeight);
+  updateFXAA();
 },250));
 </script>
 </body>
