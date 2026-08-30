@@ -1152,13 +1152,24 @@ document.getElementById('overlay').addEventListener('click',e=>{
 showIntro();
 
 // ---------- лабиринт ----------
-function generateMaze(n){
+function mulberry32(a){
+  return function(){
+    a|=0; a=(a+0x6D2B79F5)|0;
+    let t=Math.imul(a^(a>>>15),1|a);
+    t=(t+Math.imul(t^(t>>>7),61|t))^t;
+    return((t^(t>>>14))>>>0)/4294967296;
+  };
+}
+function generateMaze(n,seed){
+  const R = (seed&&seed>0) ? mulberry32(seed) : Math.random;
+  const rr=(a,b)=>a+R()*(b-a);
+  const rri=(a,b)=>Math.floor(rr(a,b+1));
   const W=n*2+1, H=n*2+1;
   const g=Array.from({length:H},()=>new Array(W).fill(1));
   const stack=[[0,0]]; g[1][1]=0;
   while(stack.length){
     const [cx,cy]=stack[stack.length-1];
-    const dirs=[[1,0],[-1,0],[0,1],[0,-1]].sort(()=>Math.random()-0.5);
+    const dirs=[[1,0],[-1,0],[0,1],[0,-1]].sort(()=>R()-0.5);
     let carved=false;
     for(const [dx,dy] of dirs){
       const nx=cx+dx, ny=cy+dy;
@@ -1172,7 +1183,7 @@ function generateMaze(n){
   }
   let extra=Math.floor(n*n*0.16), guard=900;
   while(extra>0&&guard-->0){
-    const x=rndi(1,W-2), y=rndi(1,H-2);
+    const x=rri(1,W-2), y=rri(1,H-2);
     if(g[y][x]!==1) continue;
     const h=g[y][x-1]===0&&g[y][x+1]===0;
     const v=g[y-1][x]===0&&g[y+1][x]===0;
@@ -3247,23 +3258,34 @@ function netBegin(seed){
   document.body.classList.toggle('touch', p==='mobile');
   if(p==='mobile'){
     try{ renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); }catch(err){}
-    renderer.setSize(innerWidth,innerHeight);
-    composer.setPixelRatio(renderer.getPixelRatio());
-    composer.setSize(innerWidth,innerHeight);
-    updateFXAA();
-    try{ document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(()=>{}); }catch(err){}
   } else {
     try{ renderer.setPixelRatio(Math.min(devicePixelRatio,2)); }catch(err){}
-    renderer.setSize(innerWidth,innerHeight);
-    composer.setPixelRatio(renderer.getPixelRatio());
-    composer.setSize(innerWidth,innerHeight);
-    updateFXAA();
+  }
+  renderer.setSize(innerWidth,innerHeight);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(innerWidth,innerHeight);
+  updateFXAA();
+  if(p==='mobile'){
+    try{ document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(()=>{}); }catch(err){}
+    try{ screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape').catch(()=>{}); }catch(err){}
   }
   score=0; kills=0; deaths=0; echo=0; depth=1; infinityMode=false;
   buildLevel(1); resetPlayer();
-  startPlaying();
+  if(p==='pc'){
+    /* pointer lock требует клика: сообщение «start» приходит гостю
+       по сети без жеста пользователя. Врата = один клик → resumeGame()
+       → requestPointerLock → pendingState. Хосту тоже честно. */
+    state='paused';
+    overlayShow(`
+      <h1 style="font-size:34px">ОБЩИЙ СОН <em>НАЧАЛСЯ</em></h1>
+      <div class="quote">вы в одном лабиринте. фигуры видят вас всех.</div>
+      <div class="go">[ щёлкни, чтобы взять управление ]</div>`);
+    pendingState='playing';
+  } else {
+    startPlaying(); // тач: pointer lock не нужен
+  }
   const hint=document.getElementById('hint');
-  hint.textContent='общий сон: '+(NET.role==='host'?'ты хост · ':'')+'вы трое в одном лабиринте';
+  hint.textContent='общий сон: '+(NET.role==='host'?'ты хост · ':'')+'вы в одном лабиринте';
   hint.style.opacity=0.7;
   setTimeout(()=>hint.style.opacity=0,6000);
 }
@@ -3310,7 +3332,19 @@ document.getElementById('overlay').addEventListener('click',e=>{
     showIntro();
   }
 });
-
+/* пауза в общем сне: без выхода в титул (оборвёт сессию) */
+const _origShowPause=showPause;
+showPause=function(){
+  if(NET.active){
+    levelSelectOpen=false; shiftSeq=0;
+    overlayShow(`<h1>ПАУЗА</h1><div class="sub">общий сон ждёт</div>
+      <div class="quote">сон не остановить — фигуры продолжают охотиться.</div>
+      <div class="go">[ ${tapWord()}, чтобы вернуться ]</div>`);
+    document.body.classList.remove('playing');
+    return;
+  }
+  _origShowPause();
+};
 })();
 </script>
 </body>
