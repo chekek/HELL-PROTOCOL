@@ -910,6 +910,10 @@ function showIntro(){
         <span>стик · кнопки · автоогонь</span>
         ${touchable?'<i>рекомендуется</i>':''}
       </button>
+      <button class="plat-btn" data-net="lobby">
+        <b>ВТРОЁМ</b>
+        <span>p2p · без серверов · 3 игрока</span>
+      </button>
     </div>
     <div class="quote">небо темнеет с каждой глубиной · после седьмой — ночь и шёпот<br>
     на семнадцатой — красная луна · 2300 эха сна открывают рассвет<br>
@@ -1292,7 +1296,7 @@ function buildLevel(d){
 
   levelGroup=new THREE.Group(); scene.add(levelGroup);
   const n=8+Math.min(d,7);
-  maze=generateMaze(n);
+  maze=generateMaze(n, NET.active?(NET.runSeed+d*7919):0);
 
   const fw=maze.W*CS, fh=maze.H*CS;
   const floor=new THREE.Mesh(new THREE.PlaneGeometry(fw,fh), floorMat.clone());
@@ -2890,6 +2894,424 @@ addEventListener('orientationchange',()=>setTimeout(()=>{
   composer.setSize(innerWidth,innerHeight);
   updateFXAA();
 },250));
+</script>
+  <script>
+/* ============================================================
+   БЕССОННИЦА · СЕТЬ — часть A: транспорт, лобби, призраки
+   хост-авторитарная звезда: 0=хост, 1..2=гости
+   ============================================================ */
+(function(){
+'use strict';
+
+/* ---------- ICE: STUN + публичный TURN (нужен при VPN с kill-switch,
+   симметричном NAT операторов и строгих фаерволах; для продакшна
+   поднимите свой coturn — реле видит только шифрованные байты) ---------- */
+const ICE={
+  iceServers:[
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'stun:stun1.l.google.com:19302'},
+    {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+    {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
+  ]
+};
+
+/* ---------- утилиты ---------- */
+const enc=s=>btoa(unescape(encodeURIComponent(s)));
+const dec=s=>decodeURIComponent(escape(atob(s.trim())));
+function waitIce(pc,ms){ // non-trickle: ждём сбора кандидатов (VPN собирает медленно)
+  return new Promise(res=>{
+    if(pc.iceGatheringState==='complete') return res();
+    let done=false;
+    const fin=()=>{ if(!done){done=true;pc.removeEventListener('icegatheringstatechange',chk);res();} };
+    const chk=()=>{ if(pc.iceGatheringState==='complete') fin(); };
+    pc.addEventListener('icegatheringstatechange',chk);
+    setTimeout(fin,ms||3500);
+  });
+}
+
+const NET={
+  active:false, role:null, myId:0, name:'', runSeed:0,
+  conns:new Map(),   // id -> {pc,dc,ping,rt,relay}
+  ghosts:new Map(),  // id -> {group,txt,buf,yaw,pitch,name}
+  log:[]
+};
+window.NET=NET;
+
+/* ---------- мини-стили лобби ---------- */
+const st=document.createElement('style');
+st.textContent=`
+.net-box{margin-top:20px;text-align:left}
+.net-name{width:100%;max-width:280px;font-family:'IBM Plex Mono',monospace;font-size:13px;
+  background:rgba(255,255,255,.55);border:1px solid rgba(20,18,15,.35);color:var(--ink);
+  padding:8px 10px;text-align:center}
+.net-ta{width:100%;height:58px;font-family:'IBM Plex Mono',monospace;font-size:9.5px;line-height:1.35;
+  background:rgba(255,255,255,.6);border:1px solid rgba(20,18,15,.3);color:var(--ink);
+  padding:7px;resize:none;box-sizing:border-box}
+.net-btn{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  padding:9px 14px;background:none;border:1px solid rgba(20,18,15,.45);color:var(--ink);
+  cursor:pointer;transition:all .13s}
+.net-btn:hover{background:var(--ink);color:var(--paper)}
+.net-btn.go{border-color:var(--red);color:var(--red)}
+.net-btn.go:hover{background:var(--red);color:#fff}
+.net-btn:disabled{opacity:.35;pointer-events:none}
+.net-slot{border:1px solid rgba(20,18,15,.28);padding:12px 14px;margin-top:10px;text-align:left}
+.net-slot .st-title{font-size:11px;letter-spacing:.22em;text-transform:uppercase;font-weight:700}
+.net-slot .st-row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
+.net-status{font-size:10px;letter-spacing:.18em;text-transform:uppercase}
+.net-status.on{color:#1d7a34;font-weight:700}
+.net-status.off{color:var(--red)}
+.net-status.wait{opacity:.55}
+.net-note{font-size:10px;letter-spacing:.14em;opacity:.6;margin-top:12px;text-align:center}
+.net-log{font-size:10px;text-align:left;margin-top:14px;opacity:.7;max-height:74px;overflow:hidden;line-height:1.6}
+.net-ping{font-size:11px;letter-spacing:.18em;margin-top:6px}
+`;
+document.head.appendChild(st);
+
+function say(msg){ NET.log.push(msg); if(NET.log.length>5) NET.log.shift(); }
+
+/* ---------- призраки: аватар дальнего игрока ---------- */
+const GHOST_COLORS=[0x2f7cff,0xe0b83c,0xe8e2d4];
+function makeGhost(id,name){
+  const col=GHOST_COLORS[id%3];
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.OctahedronGeometry(0.55),
+    new THREE.MeshLambertMaterial({color:0x14120f,emissive:col,emissiveIntensity:2.2}));
+  g.add(body);
+  g.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.OctahedronGeometry(0.55)),
+    new THREE.LineBasicMaterial({color:0x0d0b09})));
+  // имя над головой
+  const c=document.createElement('canvas'); c.width=256; c.height=64;
+  const x=c.getContext('2d');
+  x.font='700 30px "IBM Plex Mono",monospace'; x.textAlign='center';
+  x.fillStyle='#'+col.toString(16).padStart(6,'0');
+  x.fillText((name||'игрок '+id).slice(0,12),128,40);
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),fog:false}));
+  spr.scale.set(2.2,0.55,1); spr.position.y=1.15;
+  g.add(spr);
+  g.position.set(0,-99,0); // спрятан до первого пакета
+  scene.add(g);
+  return {group:g,body,buf:[],yaw:0,pitch:0,name:name||('игрок '+id)};
+}
+function dropGhost(id){
+  const gh=NET.ghosts.get(id);
+  if(gh){ scene.remove(gh.group); NET.ghosts.delete(id); }
+}
+function ghostPos(id,msg){
+  let gh=NET.ghosts.get(id);
+  if(!gh){ gh=makeGhost(id,msg.n||''); NET.ghosts.set(id,gh); }
+  gh.buf.push({t:performance.now()/1000,x:msg.x,y:msg.y,z:msg.z});
+  if(gh.buf.length>6) gh.buf.shift();
+  gh.yaw=msg.yw; gh.pitch=msg.pt;
+}
+
+/* ---------- сообщения ---------- */
+function send(id,obj){
+  const c=NET.conns.get(id);
+  if(c&&c.dc&&c.dc.readyState==='open'){ try{ c.dc.send(JSON.stringify(obj)); }catch(e){} }
+}
+function broadcast(obj,exceptId){
+  for(const [id,c] of NET.conns)
+    if(id!==exceptId&&c.dc&&c.dc.readyState==='open'){
+      try{ c.dc.send(JSON.stringify(obj)); }catch(e){}
+    }
+}
+function onData(fromId,str){
+  let m; try{ m=JSON.parse(str); }catch(e){ return; }
+  switch(m.t){
+    case 'hello': // гость представился
+      if(NET.role==='host'){
+        send(fromId,{t:'welcome',id:fromId,host:NET.name,seed:NET.runSeed});
+        say((m.n||'гость')+' вошёл в сон');
+      }
+      break;
+    case 'welcome':
+      NET.myId=m.id; NET.runSeed=m.seed;
+      say('хост принял: '+(m.host||''));
+      break;
+    case 'pos':
+      ghostPos(fromId,m);
+      if(NET.role==='host') broadcast(m,fromId); // звезда: хост ретранслирует гостям
+      break;
+    case 'ping':
+      send(fromId,{t:'pong',ts:m.ts});
+      break;
+    case 'pong':{
+      const c=NET.conns.get(fromId);
+      if(c) c.rtt=Math.round(performance.now()-m.ts);
+      break;
+    }
+    case 'start':
+      if(NET.role==='guest') netBegin(m.seed);
+      break;
+  }
+}
+
+/* ---------- WebRTC ---------- */
+function bindChannel(id,dc,pc){
+  NET.conns.set(id,{pc,dc,rtt:0});
+  dc.onmessage=e=>onData(id,e.data);
+  dc.onopen=()=>{
+    say('слот '+id+' на связи');
+    send(id,{t:'hello',n:NET.name,id:NET.myId});
+    refreshLobby();
+    // пинг каждые 2с
+    const c=NET.conns.get(id);
+    c.pingInt=setInterval(()=>{
+      if(dc.readyState==='open') send(id,{t:'ping',ts:performance.now()});
+      else clearInterval(c.pingInt);
+    },2000);
+  };
+  dc.onclose=()=>{ dropGhost(id); say('слот '+id+' отключился'); refreshLobby(); };
+  pc.onconnectionstatechange=()=>{
+    if(['failed','disconnected','closed'].includes(pc.connectionState)){
+      dropGhost(id); say('слот '+id+' потерян'); refreshLobby();
+    }
+  };
+}
+async function hostMakeOffer(){
+  const pc=new RTCPeerConnection(ICE);
+  const id=NET.conns.size+1; // слоты 1,2
+  const dc=pc.createDataChannel('insomnia',{ordered:true});
+  bindChannel(id,dc,pc);
+  await pc.setLocalDescription(await pc.createOffer());
+  await waitIce(pc);
+  return {id,offer:enc(JSON.stringify(pc.localDescription))};
+}
+async function hostTakeAnswer(id,answerStr){
+  const c=NET.conns.get(id);
+  if(!c) throw new Error('слот не создан');
+  await c.pc.setRemoteDescription(JSON.parse(dec(answerStr)));
+}
+async function guestMakeAnswer(offerStr){
+  const pc=new RTCPeerConnection(ICE);
+  pc.ondatachannel=e=>bindChannel(0,e.channel,pc); // 0 = хост
+  await pc.setRemoteDescription(JSON.parse(dec(offerStr)));
+  await pc.setLocalDescription(await pc.createAnswer());
+  await waitIce(pc);
+  return enc(JSON.stringify(pc.localDescription));
+}
+
+/* ---------- лобби ---------- */
+function netLobby(){
+  NET.role=null; NET.name='';
+  overlayShow(`
+    <h1>СОН <em>ВТРОЁМ</em></h1>
+    <div class="sub">прямое соединение · без серверов</div>
+    <div class="net-box" style="text-align:center">
+      <input class="net-name" id="net-name" maxlength="12" placeholder="твоё имя в сне">
+      <div class="st-row" style="justify-content:center;margin-top:14px">
+        <button class="net-btn go" id="net-host">я хост · создать сон</button>
+        <button class="net-btn" id="net-guest">я гость · войти по коду</button>
+      </div>
+      <div class="net-note">управление: <b id="net-plat-lab">клавиатура</b> ·
+        <button class="net-btn" id="net-plat" style="padding:4px 8px">сменить</button></div>
+    </div>
+    <div class="quote">хост создаёт код и отправляет друзьям в любой мессенджер<br>
+    друзья возвращают ответный код — и сон становится общим</div>
+    <div class="menu-link">[ назад к выбору платформы ]</div>`);
+  let plat='pc';
+  $('net-host').onclick=()=>{ NET.name=($('net-name').value||'хост').slice(0,12); hostLobby(); };
+  $('net-guest').onclick=()=>{ NET.name=($('net-name').value||'гость').slice(0,12); guestLobby(); };
+  $('net-plat').onclick=()=>{
+    plat=plat==='pc'?'mobile':'pc';
+    $('net-plat-lab').textContent=plat==='pc'?'клавиатура':'экран';
+    NET.ownPlat=plat;
+  };
+  NET.ownPlat='pc';
+}
+function hostLobby(){
+  NET.role='host'; NET.myId=0;
+  overlayShow(`
+    <h1>ХОСТ <em>СНА</em></h1>
+    <div class="sub">создай код для каждого из двух друзей</div>
+    <div class="net-box">
+      <div class="net-slot" id="net-slot1">
+        <div class="st-title">друг 1</div>
+        <div class="st-status off" id="net-ss1">не подключён</div>
+        <div class="st-row">
+          <button class="net-btn" id="net-mk1">создать код</button>
+          <textarea class="net-ta" id="net-off1" readonly placeholder="здесь появится код — отправь его первому другу"></textarea>
+          <button class="net-btn" id="net-cp1">копировать</button>
+        </div>
+        <div class="st-row">
+          <textarea class="net-ta" id="net-ans1" placeholder="вставь ответный код первого друга"></textarea>
+          <button class="net-btn go" id="net-ok1">подтвердить</button>
+        </div>
+      </div>
+      <div class="net-slot" id="net-slot2">
+        <div class="st-title">друг 2</div>
+        <div class="st-status off" id="net-ss2">не подключён</div>
+        <div class="st-row">
+          <button class="net-btn" id="net-mk2">создать код</button>
+          <textarea class="net-ta" id="net-off2" readonly placeholder="код для второго друга"></textarea>
+          <button class="net-btn" id="net-cp2">копировать</button>
+        </div>
+        <div class="st-row">
+          <textarea class="net-ta" id="net-ans2" placeholder="вставь ответный код второго друга"></textarea>
+          <button class="net-btn go" id="net-ok2">подтвердить</button>
+        </div>
+      </div>
+      <div class="st-row" style="justify-content:center;margin-top:16px">
+        <button class="net-btn go" id="net-start" disabled>начать общий сон</button>
+      </div>
+      <div class="net-ping" id="net-pings" style="text-align:center"></div>
+    </div>
+    <div class="quote">начать можно и вдвоём — второй слот оставь пустым</div>`);
+  for(const s of [1,2]){
+    $('net-mk'+s).onclick=async()=>{
+      try{
+        const {id,offer}=await hostMakeOffer();
+        if(id!==s){ /* слоты создаются по порядку */ }
+        $('net-off'+s).value=offer;
+      }catch(e){ $('net-off'+s).value='ошибка: '+e.message; }
+    };
+    $('net-cp'+s).onclick=()=>{
+      const ta=$('net-off'+s); ta.select();
+      try{ navigator.clipboard.writeText(ta.value); }catch(e){ document.execCommand('copy'); }
+    };
+    $('net-ok'+s).onclick=async()=>{
+      try{
+        await hostTakeAnswer(s,$('net-ans'+s).value);
+        $('net-ss'+s).textContent='устанавливается…'; $('net-ss'+s).className='net-status wait';
+      }catch(e){ $('net-ss'+s).textContent='код не принят'; $('net-ss'+s).className='net-status off'; }
+    };
+  }
+  $('net-start').onclick=()=>{
+    NET.runSeed=(Math.random()*1e9)|0;
+    broadcast({t:'start',seed:NET.runSeed});
+    netBegin(NET.runSeed);
+  };
+  refreshLobby();
+}
+function guestLobby(){
+  NET.role='guest';
+  overlayShow(`
+    <h1>ГОСТЬ <em>СНА</em></h1>
+    <div class="sub">вставь код от хоста — получишь ответный</div>
+    <div class="net-box">
+      <textarea class="net-ta" id="net-off-in" style="height:74px" placeholder="вставь код хоста сюда"></textarea>
+      <div class="st-row">
+        <button class="net-btn go" id="net-mk">создать ответный код</button>
+      </div>
+      <textarea class="net-ta" id="net-ans-out" readonly placeholder="здесь появится твой код — отправь его обратно хосту"></textarea>
+      <div class="st-row">
+        <button class="net-btn" id="net-cp">копировать</button>
+      </div>
+      <div class="net-status wait" id="net-ss">ожидание соединения…</div>
+      <div class="net-ping" id="net-pings"></div>
+    </div>
+    <div class="quote">когда хост подтвердит код — он появится в твоём сне.<br>начало игры объявит хост.</div>
+    <div class="menu-link">[ назад ]</div>`);
+  $('net-mk').onclick=async()=>{
+    try{
+      const ans=await guestMakeAnswer($('net-off-in').value);
+      $('net-ans-out').value=ans;
+      $('net-ss').textContent='код отправлен — жди начала'; $('net-ss').className='net-status wait';
+    }catch(e){
+      $('net-ss').textContent='код хоста не принят'; $('net-ss').className='net-status off';
+    }
+  };
+  $('net-cp').onclick=()=>{
+    const ta=$('net-ans-out'); ta.select();
+    try{ navigator.clipboard.writeText(ta.value); }catch(e){ document.execCommand('copy'); }
+  };
+}
+function refreshLobby(){
+  if(NET.role!=='host') return;
+  let online=0;
+  for(const s of [1,2]){
+    const c=NET.conns.get(s);
+    const el=document.getElementById('net-ss'+s);
+    if(!el) continue;
+    if(c&&c.dc&&c.dc.readyState==='open'){
+      el.textContent='на связи'; el.className='net-status on'; online++;
+    }
+  }
+  const start=document.getElementById('net-start');
+  if(start) start.disabled=(online<1);
+  const pings=document.getElementById('net-pings');
+  if(pings){
+    const rows=[];
+    for(const [id,c] of NET.conns)
+      if(c.dc&&c.dc.readyState==='open') rows.push(`друг ${id}: ${c.rtt||'…'} мс`);
+    pings.textContent=rows.join(' · ');
+  }
+}
+setInterval(refreshLobby,1500);
+
+/* ---------- старт общего сна ---------- */
+function netBegin(seed){
+  NET.runSeed=seed; NET.active=true;
+  const p=NET.ownPlat||'pc';
+  platform=p; initAudio();
+  document.body.classList.toggle('touch', p==='mobile');
+  if(p==='mobile'){
+    try{ renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); }catch(err){}
+    renderer.setSize(innerWidth,innerHeight);
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(innerWidth,innerHeight);
+    updateFXAA();
+    try{ document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(()=>{}); }catch(err){}
+  } else {
+    try{ renderer.setPixelRatio(Math.min(devicePixelRatio,2)); }catch(err){}
+    renderer.setSize(innerWidth,innerHeight);
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(innerWidth,innerHeight);
+    updateFXAA();
+  }
+  score=0; kills=0; deaths=0; echo=0; depth=1; infinityMode=false;
+  buildLevel(1); resetPlayer();
+  startPlaying();
+  const hint=document.getElementById('hint');
+  hint.textContent='общий сон: '+(NET.role==='host'?'ты хост · ':'')+'вы трое в одном лабиринте';
+  hint.style.opacity=0.7;
+  setTimeout(()=>hint.style.opacity=0,6000);
+}
+
+/* ---------- тик: позиция 15 Гц + интерполяция призраков ---------- */
+let posT=0,last=performance.now();
+function tick(){
+  requestAnimationFrame(tick);
+  const now=performance.now(), dt=Math.min((now-last)/1000,0.05); last=now;
+  if(!NET.active||state!=='playing') return;
+  posT-=dt;
+  if(posT<=0){
+    posT=1/15;
+    const msg={t:'pos',x:+player.pos.x.toFixed(2),y:+player.pos.y.toFixed(2),
+      z:+player.pos.z.toFixed(2),yw:+player.yaw.toFixed(2),pt:+player.pitch.toFixed(2),n:NET.name};
+    if(NET.role==='host') broadcast(msg);
+    else send(0,msg);
+  }
+  // призраки: буфер из 2 точек, лерп с задержкой 100 мс
+  const rt=now/1000-0.1;
+  for(const [id,gh] of NET.ghosts){
+    const b=gh.buf;
+    if(!b.length) continue;
+    let a=b[0],z=b[b.length-1];
+    for(let i=0;i<b.length-1;i++) if(b[i].t<=rt&&b[i+1].t>=rt){ a=b[i]; z=b[i+1]; break; }
+    const span=Math.max(0.001,z.t-a.t);
+    const k=clamp((rt-a.t)/span,0,1);
+    gh.group.position.set(a.x+(z.x-a.x)*k, a.y+(z.y-a.y)*k, a.z+(z.z-a.z)*k);
+    gh.group.rotation.y=gh.yaw+Math.PI; // октаген «смотрит» куда игрок
+    gh.body.rotation.x+=dt*1.2;         // мягкое вращение, как у врагов
+  }
+}
+requestAnimationFrame(tick);
+
+/* ---------- точка входа: кнопка «ВТРОЁМ» на титуле ---------- */
+document.getElementById('overlay').addEventListener('click',e=>{
+  const btn=e.target.closest('[data-net]');
+  if(btn&&btn.dataset.net==='lobby'&&state==='menu'){ netLobby(); return; }
+  if(e.target.closest('.menu-link')&&NET.role!==null&&!NET.active){
+    // назад из лобби (не из игры)
+    if(!document.querySelector('.net-box')) return;
+    NET.role=null; NET.conns.forEach(c=>{try{c.pc.close();}catch(err){}});
+    NET.conns.clear(); NET.ghosts.forEach((_,id)=>dropGhost(id));
+    showIntro();
+  }
+});
+
+})();
 </script>
 </body>
 </html>
