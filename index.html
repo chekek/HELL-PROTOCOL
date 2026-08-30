@@ -743,6 +743,7 @@ let infSpawnT=0;
 let curGrav=GRAV, curJump=JUMP, curWalk=WALK, curRun=RUN;
 let platform='pc';
 let mod=null;
+  let netLastDepthSent=1;
 let mouseHeld=false;
 let lastMod='';
 const touchUI={lookId:null,moveId:null,moveX:0,moveY:0,
@@ -1293,6 +1294,7 @@ function clearEnemiesAndFx(){
 function buildLevel(d){
   disposeLevel();
   infinityMode=false;
+  if(NET.active&&NET.role==='guest'){ netGuestBuild(d); return; }
   curGrav = mod==='moon' ? MOONG_GRAV : GRAV;
   curJump = mod==='moon' ? MOONG_JUMP : JUMP;
   curWalk=WALK; curRun=RUN;
@@ -2241,6 +2243,12 @@ function tryFire(){
   if(st.reloading>0) return;
   if(st.ammo<=0){ SFX.dry(); startReload(); return; }
   st.ammo--; cooldown=w.rate; recoil=1;
+    if(NET.active&&NET.role==='guest'){
+    const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    send(0,{t:'fire',w:curW,
+      p:{x:+player.pos.x.toFixed(2),y:+player.pos.y.toFixed(2),z:+player.pos.z.toFixed(2)},
+      d:{x:+d.x.toFixed(3),y:+d.y.toFixed(3),z:+d.z.toFixed(3)}});
+  }
   player.pitch=clamp(player.pitch+w.kick,-1.5,1.5);
   const mz=gunModels[curW].userData.muzzle;
   flashMesh.position.copy(mz); flashMesh.visible=true;
@@ -2304,6 +2312,12 @@ function fireLaserTick(){
 }
 function updateLaserBeam(){
   const o=camera.position.clone().add(new THREE.Vector3(0.22,-0.24,-0.3).applyQuaternion(camera.quaternion));
+    if(NET.active&&NET.role==='guest'){
+    const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    send(0,{t:'fire',w:3,
+      p:{x:+player.pos.x.toFixed(2),y:+player.pos.y.toFixed(2),z:+player.pos.z.toFixed(2)},
+      d:{x:+d.x.toFixed(3),y:+d.y.toFixed(3),z:+d.z.toFixed(3)}});
+  }
   const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
   const wd=castWall3D(o,d,200);
   const end=o.clone().addScaledVector(d,wd);
@@ -2660,6 +2674,17 @@ function loop(){
 
   if(state==='playing'){
     gameT+=dt;
+        // сеть: хост рассылает снимки мира и синхронизирует счёт
+    if(NET.active&&NET.role==='host'){
+      netHostTick(dt);
+    }
+    // сеть: переход глубины у хоста объявляется гостям
+    if(NET.active&&NET.role==='host'){
+      if(depth>netLastDepthSent){
+        netLastDepthSent=depth;
+        broadcast({t:'ev_level',d:depth,loop:false});
+      }
+    }
 
     // --- движение: клавиатура + сенсорный пад ---
     let f=0,s=0;
