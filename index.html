@@ -237,8 +237,8 @@
 <script>
 'use strict';
 /* ============================================================
-   БЕССОННИЦА — часть 1 из 2
-   (пост-обработка: HDR-bloom + зерно сна + FXAA)
+   БЕССОННИЦА — часть 1 из 2 (полная пересборка)
+   соло · мобильное · кооп на 3 игроков (WebRTC p2p)
    ============================================================ */
 
 // ---------- константы ----------
@@ -260,7 +260,7 @@ const INF_GRAV = 5, INF_JUMP = 9.5, INF_WALK = 9.5, INF_RUN = 14;
 const INF_ENEMIES = 24;
 const TOUCH_SENS = 0.0062;
 const MOONG_GRAV = 7, MOONG_JUMP = 9.5;
-const SAVE_KEY = 'insomnia_save_v1';
+const SAVE_KEY = 'insomnia_save_v2';
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd = (a,b)=>a+Math.random()*(b-a);
@@ -269,6 +269,7 @@ const easeInOut = t=>t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
 
 // ---------- сохранение ----------
 function saveGame(){
+  if(NET.active&&NET.role==='guest') return; // сохраняет только хост/соло
   try{
     localStorage.setItem(SAVE_KEY,JSON.stringify({
       d:depth, s:score, k:kills, de:deaths, e:echo, b:bestDepth, m:mod, inf:infinityMode
@@ -582,10 +583,7 @@ playerLight.position.set(0, -0.1, 0);
 camera.add(playerLight);
 let playerLightBase = 0;
 
-/* ---------- пост-обработка ----------
-   HDR-буфер + порог 1.0: светится только то, что ярче единицы
-   (лучи, луна, маяк — но не стены). Затем зерно+виньетка и FXAA.
-   На старых WebGL1-устройствах — мягкий LDR-режим. */
+/* ---------- пост-обработка: HDR-bloom + зерно сна + FXAA ---------- */
 const isGL2 = renderer.capabilities.isWebGL2;
 const composer = isGL2
   ? new THREE.EffectComposer(renderer,
@@ -621,7 +619,6 @@ function updateFXAA(){
 composer.setPixelRatio(renderer.getPixelRatio());
 composer.setSize(innerWidth,innerHeight);
 updateFXAA();
-// HDR-цвет: всё, что должно светиться, делаем ярче 1.0
 function glow(hex,mul){ const c=new THREE.Color(hex); c.multiplyScalar(mul); return c; }
 
 // чёрное солнце / красное затмение
@@ -637,13 +634,13 @@ const sunHalo = new THREE.Mesh(
     side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false})
 );
 sunHalo.position.z = 0.5;
-const sunGlow = new THREE.Mesh(
+const sunGlowMesh = new THREE.Mesh(
   new THREE.CircleGeometry(58,48),
   new THREE.MeshBasicMaterial({color:0x51100a, transparent:true, opacity:0, fog:false,
     blending:THREE.AdditiveBlending, depthWrite:false})
 );
-sunGlow.position.z = -2;
-sunGroup.add(sunDisc, sunHalo, sunGlow);
+sunGlowMesh.position.z = -2;
+sunGroup.add(sunDisc, sunHalo, sunGlowMesh);
 scene.add(sunGroup);
 
 // ---------- текстуры ----------
@@ -699,13 +696,14 @@ function applyAtmosphere(d){
   sunLight.color.set(new THREE.Color(0xfff2dd).lerp(new THREE.Color(0xaebadd), NIGHT));
   wallMat.color.setScalar(1 - 0.45*NIGHT);
   sunHalo.material.opacity = 0.85*NIGHT;
-  sunGlow.material.opacity = 0.4*NIGHT;
+  sunGlowMesh.material.opacity = 0.4*NIGHT;
   sunGroup.visible = d < 17;
   playerLightBase = NIGHT*1.25;
-  gunHemi.intensity = 0.85 - 0.3*NIGHT;
-  gunHemi.color.set(new THREE.Color(0xfff6e6).lerp(new THREE.Color(0x9fb4de), NIGHT));
-  gunDir.intensity = 0.6 - 0.25*NIGHT;
-  gunDir.color.set(0xffffff);
+  if(typeof gunHemi!=='undefined'){
+    gunHemi.intensity = 0.85 - 0.3*NIGHT;
+    gunHemi.color.set(new THREE.Color(0xfff6e6).lerp(new THREE.Color(0x9fb4de), NIGHT));
+    gunDir.intensity = 0.6 - 0.25*NIGHT;
+  }
   dreamPass.uniforms.uNight.value = 0.26 + 0.34*NIGHT;
   document.body.classList.toggle('night', NIGHT >= 0.5);
 }
@@ -721,10 +719,12 @@ function applyInfinityAtmosphere(){
   wallMat.color.setScalar(1);
   sunGroup.visible = false;
   playerLightBase = 0.5;
-  gunHemi.intensity = 0.95;
-  gunHemi.color.set(0xffd9b0);
-  gunDir.intensity = 0.7;
-  gunDir.color.set(0xffb37a);
+  if(typeof gunHemi!=='undefined'){
+    gunHemi.intensity = 0.95;
+    gunHemi.color.set(0xffd9b0);
+    gunDir.intensity = 0.7;
+    gunDir.color.set(0xffb37a);
+  }
   dreamPass.uniforms.uNight.value = 0.24;
   document.body.classList.add('night');
 }
@@ -743,7 +743,6 @@ let infSpawnT=0;
 let curGrav=GRAV, curJump=JUMP, curWalk=WALK, curRun=RUN;
 let platform='pc';
 let mod=null;
-  let netLastDepthSent=1;
 let mouseHeld=false;
 let lastMod='';
 const touchUI={lookId:null,moveId:null,moveX:0,moveY:0,
@@ -762,6 +761,7 @@ const player = { pos:new THREE.Vector3(), vel:new THREE.Vector3(),
   hp:100, onGround:true, yaw:0, pitch:0, lastHurt:-99, bob:0, stepAcc:0 };
 let shake=0, dmgFlash=0;
 
+// ---------- ввод ----------
 const keys={};
 addEventListener('keydown',e=>{
   keys[e.code]=true;
@@ -819,8 +819,8 @@ document.addEventListener('pointerlockchange',()=>{
     laserOff(); moonSound(false);
   }
 });
-overlayShow('');
 
+const overlay=document.getElementById('overlay');
 function overlayShow(html){ document.getElementById('overlay-box').innerHTML=html;
   document.getElementById('overlay').classList.remove('hidden'); }
 
@@ -894,6 +894,7 @@ function depthFlavor(d){
 }
 const tapWord=()=>platform==='mobile'?'коснись':'щёлкни';
 
+// ---------- экраны ----------
 function showIntro(){
   const touchable=('ontouchstart' in window)||navigator.maxTouchPoints>0;
   const sv=loadSave();
@@ -911,6 +912,8 @@ function showIntro(){
         <span>стик · кнопки · автоогонь</span>
         ${touchable?'<i>рекомендуется</i>':''}
       </button>
+    </div>
+    <div class="plat-row" style="margin-top:14px">
       <button class="plat-btn" data-net="lobby">
         <b>ВТРОЁМ</b>
         <span>p2p · без серверов · 3 игрока</span>
@@ -918,22 +921,28 @@ function showIntro(){
     </div>
     <div class="quote">небо темнеет с каждой глубиной · после седьмой — ночь и шёпот<br>
     на семнадцатой — красная луна · 2300 эха сна открывают рассвет<br>
-    за рассвет — модификатор на следующий сон: гравитация · луч · ак-47</div>
+    за рассвет — модификатор: гравитация · луч · ак-47</div>
     ${sv?`<div class="menu-link">сон помнит тебя: глубина ${sv.inf?'∞':String(sv.d).padStart(2,'0')} · счёт ${sv.s}</div>`:''}`);
 }
 function showPause(){
   levelSelectOpen=false; shiftSeq=0;
-  overlayShow(`<h1>ПАУЗА</h1><div class="sub">сон ждёт</div>
-    <div class="quote">фигуры стоят неподвижно. пока что.</div>
-    <div class="go">[ ${tapWord()}, чтобы вернуться ]</div>
-    <div class="menu-link">[ в титул · сменить платформу ]</div>`);
+  if(NET.active){
+    overlayShow(`<h1>ПАУЗА</h1><div class="sub">общий сон ждёт</div>
+      <div class="quote">сон не остановить — фигуры продолжают охотиться.</div>
+      <div class="go">[ ${tapWord()}, чтобы вернуться ]</div>`);
+  } else {
+    overlayShow(`<h1>ПАУЗА</h1><div class="sub">сон ждёт</div>
+      <div class="quote">фигуры стоят неподвижно. пока что.</div>
+      <div class="go">[ ${tapWord()}, чтобы вернуться ]</div>
+      <div class="menu-link">[ в титул · сменить платформу ]</div>`);
+  }
   document.body.classList.remove('playing');
 }
 function showDeath(){
   overlayShow(`
     <h1>ПРОБУЖДЕНИЕ<br><em>ПРОВАЛЕНО</em></h1>
     <div class="stat">глубина <b>${String(depth).padStart(2,'0')}</b> · счёт <b>${score}</b> · уничтожено <b>${kills}</b><br>
-    пробуждений <b>${deaths+1}</b> · лучшая глубина <b>${String(bestDepth).padStart(2,'0')}</b></div>
+    пробуждений <b>${deaths}</b> · лучшая глубина <b>${String(bestDepth).padStart(2,'0')}</b></div>
     <div class="quote">${depthFlavor(depth)}<br>смерть возвращает в начало глубины. лабиринт уже другой.</div>
     <div class="go">[ ${tapWord()}, чтобы проснуться на глубине ${String(depth).padStart(2,'0')} ]</div>`);
   document.body.classList.remove('playing');
@@ -1044,11 +1053,9 @@ function startNewRun(){
   buildLevel(1); resetPlayer();
   resumeGame();
 }
-function choosePlatform(p){
-  platform=p;
-  initAudio();
-  document.body.classList.toggle('touch', p==='mobile');
-  if(p==='mobile'){
+function applyPlatform(){
+  document.body.classList.toggle('touch', platform==='mobile');
+  if(platform==='mobile'){
     try{ renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); }catch(err){}
     try{
       if(document.documentElement.requestFullscreen)
@@ -1065,6 +1072,11 @@ function choosePlatform(p){
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(innerWidth,innerHeight);
   updateFXAA();
+}
+function choosePlatform(p){
+  platform=p;
+  initAudio();
+  applyPlatform();
   const sv=loadSave();
   if(sv){ showContinue(sv); }
   else { startNewRun(); }
@@ -1077,6 +1089,8 @@ document.getElementById('overlay').addEventListener('click',e=>{
     choosePlatform(plat.dataset.plat);
     return;
   }
+  const netb=e.target.closest('[data-net]');
+  if(netb&&netb.dataset.net==='lobby'&&state==='menu'){ netLobby(); return; }
   const cb=e.target.closest('[data-cont]');
   if(cb&&state==='continue'){
     if(cb.dataset.cont==='1'){
@@ -1126,7 +1140,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
     if(++shiftSeq>=5){ shiftSeq=0; showLevelSelect(); }
     return;
   }
-  if(e.target.closest('.menu-link')&&state==='paused'){
+  if(e.target.closest('.menu-link')&&state==='paused'&&!NET.active){
     state='menu';
     laserOff(); moonSound(false);
     enemies.forEach(en=>chargeSound(false,en));
@@ -1142,9 +1156,15 @@ document.getElementById('overlay').addEventListener('click',e=>{
     return;
   } else if(state==='dead'){
     deaths++;
-    buildLevel(depth); resetPlayer();
+    if(NET.active){ netAfterDeath(); }
+    else { buildLevel(depth); resetPlayer(); }
     resumeGame();
   } else if(state==='dawn'){
+    if(NET.active&&NET.role==='guest'){
+      overlayShow(`<h1>ХОСТ <em>ВЫБИРАЕТ</em></h1>
+        <div class="quote">награда сна будет общей. жди…</div>`);
+      return;
+    }
     showModSelect();
   } else if(state==='paused'){
     resumeGame();
@@ -1152,7 +1172,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
 });
 showIntro();
 
-// ---------- лабиринт ----------
+// ---------- лабиринт: сеяная генерация ----------
 function mulberry32(a){
   return function(){
     a|=0; a=(a+0x6D2B79F5)|0;
@@ -1249,7 +1269,7 @@ function raySphere(o,d,c,r){
   const t=-b-Math.sqrt(disc);
   return t>0?t:-1;
 }
-/* ===== КОНЕЦ ЧАСТИ 1 — напиши «дальше», пришлю часть 2 ===== */
+/* ===== КОНЕЦ ЧАСТИ 1 ===== */
 // ---------- постройка уровня ----------
 const enemies=[], rockets=[], pickups=[], particles=[];
 const particleGroup=new THREE.Group(); scene.add(particleGroup);
@@ -1291,9 +1311,85 @@ function clearEnemiesAndFx(){
   }
 }
 
+// небо и звёзды (общий фрагмент для хоста/соло/гостя)
+function buildSkyDecor(fw,fh){
+  const skyGeos=[new THREE.IcosahedronGeometry(1,1),new THREE.TorusGeometry(1,0.3,8,26),
+    new THREE.OctahedronGeometry(1,0),new THREE.TorusKnotGeometry(1,0.25,60,10)];
+  const ghost=new THREE.Color(0x17140f).lerp(new THREE.Color(0xc7d0e8),NIGHT);
+  for(let i=0;i<9;i++){
+    const g=skyGeos[rndi(0,skyGeos.length-1)];
+    const mat=new THREE.MeshBasicMaterial({color:i<2?RED:ghost.clone(),
+      wireframe:true,transparent:true,fog:false,
+      opacity:i<2?0.5+NIGHT*0.3:0.32+NIGHT*0.4});
+    const mesh=new THREE.Mesh(g,mat);
+    const a=rnd(0,Math.PI*2), rr=rnd(60,150);
+    mesh.position.set(fw/2+Math.cos(a)*rr, rnd(30,95), fh/2+Math.sin(a)*rr);
+    mesh.scale.setScalar(rnd(9,26));
+    mesh.userData={spin:rnd(0.05,0.25)*(Math.random()<0.5?-1:1)};
+    mesh.userData.sky=true;
+    levelGroup.add(mesh);
+  }
+  if(NIGHT>0.03){
+    const cnt=Math.floor(160+NIGHT*220);
+    const pos=new Float32Array(cnt*3);
+    for(let i=0;i<cnt;i++){
+      const th=rnd(0,Math.PI*2), ph=rnd(0.08,1.35);
+      pos[i*3]=Math.cos(th)*Math.cos(ph)*260;
+      pos[i*3+1]=Math.sin(ph)*260;
+      pos[i*3+2]=Math.sin(th)*Math.cos(ph)*260;
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    starfield=new THREE.Points(g,new THREE.PointsMaterial({color:glow(0xdfe6ff,1.3),
+      size:1.6,sizeAttenuation:false,transparent:true,opacity:0.85*NIGHT,fog:false}));
+    starfield.position.set(fw/2,0,fh/2);
+    levelGroup.add(starfield);
+  }
+}
+function buildMoon(){
+  const disc=new THREE.Mesh(new THREE.CircleGeometry(26,48),
+    new THREE.MeshBasicMaterial({color:glow(0xff1e08,3.5),fog:false}));
+  const halo=new THREE.Mesh(new THREE.RingGeometry(27,34,64),
+    new THREE.MeshBasicMaterial({color:glow(0xff2b17,3),transparent:true,opacity:0.7,fog:false,
+      side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+  const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,1,8),
+    new THREE.MeshBasicMaterial({color:glow(0xff2b17,3.5),transparent:true,opacity:0.95,fog:false,
+      blending:THREE.AdditiveBlending,depthWrite:false}));
+  const line=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,1,6),
+    new THREE.MeshBasicMaterial({color:0xff2b17,transparent:true,opacity:0.4,fog:false}));
+  const gring=new THREE.Mesh(new THREE.TorusGeometry(1,0.07,8,40),
+    new THREE.MeshBasicMaterial({color:glow(0xff2b17,2),transparent:true,opacity:0.6,fog:false}));
+  gring.rotation.x=Math.PI/2;
+  beam.visible=false; line.visible=false; gring.visible=false;
+  levelGroup.add(disc,halo,beam,line,gring);
+  const fw=maze.W*CS, fh=maze.H*CS;
+  moonState={disc,halo,beam,line,ring:gring,
+    pos:new THREE.Vector3(), aim:new THREE.Vector3(0,0,0),
+    cx:fw/2, cz:fh/2, orbitA:rnd(0,Math.PI*2),
+    state:'idle', t:5.0, teleT:0, fireT:0};
+}
+function buildBeacon(x,y,z){
+  const beacon=new THREE.Mesh(
+    new THREE.CylinderGeometry(0.9,0.9,90,20,1,true),
+    new THREE.MeshBasicMaterial({color:glow(0xffffff,5),transparent:true,opacity:0.22,
+      depthWrite:false,fog:false,side:THREE.DoubleSide}));
+  beacon.position.set(x,y+45,z);
+  beacon.renderOrder=-1;
+  levelGroup.add(beacon);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.3,0.06,8,40),
+    new THREE.MeshBasicMaterial({color:glow(0xffffff,1.6),fog:false}));
+  ring.rotation.x=Math.PI/2; ring.position.set(x,y+0.08,z);
+  levelGroup.add(ring);
+  const beaconLight=new THREE.PointLight(0xffffff, NIGHT*1.6+ (y>1?1.8:0), 20+ (y>1?6:0), 1);
+  beaconLight.position.set(x,y+3,z);
+  levelGroup.add(beaconLight);
+  levelGroup.userData={beacon,ring};
+}
+
 function buildLevel(d){
   disposeLevel();
   infinityMode=false;
+  // гость: мир симулирует хост, гость строит каркас по общему сиду
   if(NET.active&&NET.role==='guest'){ netGuestBuild(d); return; }
   curGrav = mod==='moon' ? MOONG_GRAV : GRAV;
   curJump = mod==='moon' ? MOONG_JUMP : JUMP;
@@ -1348,80 +1444,9 @@ function buildLevel(d){
     }
   }
   exitPos.set((far[0]+0.5)*CS,0,(far[1]+0.5)*CS);
-
-  const beacon=new THREE.Mesh(
-    new THREE.CylinderGeometry(0.9,0.9,90,20,1,true),
-    new THREE.MeshBasicMaterial({color:glow(0xffffff,5),transparent:true,opacity:0.22,
-      depthWrite:false,fog:false,side:THREE.DoubleSide})
-  );
-  beacon.position.set(exitPos.x,45,exitPos.z);
-  beacon.renderOrder=-1;
-  levelGroup.add(beacon);
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.3,0.06,8,40),
-    new THREE.MeshBasicMaterial({color:glow(0xffffff,1.6),fog:false}));
-  ring.rotation.x=Math.PI/2; ring.position.set(exitPos.x,0.08,exitPos.z);
-  levelGroup.add(ring);
-  const beaconLight=new THREE.PointLight(0xffffff, NIGHT*1.6, 20, 1);
-  beaconLight.position.set(exitPos.x,3,exitPos.z);
-  levelGroup.add(beaconLight);
-  levelGroup.userData={beacon,ring};
-
-  const skyGeos=[new THREE.IcosahedronGeometry(1,1),new THREE.TorusGeometry(1,0.3,8,26),
-    new THREE.OctahedronGeometry(1,0),new THREE.TorusKnotGeometry(1,0.25,60,10)];
-  const ghost=new THREE.Color(0x17140f).lerp(new THREE.Color(0xc7d0e8),NIGHT);
-  for(let i=0;i<9;i++){
-    const g=skyGeos[rndi(0,skyGeos.length-1)];
-    const mat=new THREE.MeshBasicMaterial({color:i<2?RED:ghost.clone(),
-      wireframe:true,transparent:true,fog:false,
-      opacity:i<2?0.5+NIGHT*0.3:0.32+NIGHT*0.4});
-    const mesh=new THREE.Mesh(g,mat);
-    const a=rnd(0,Math.PI*2), rr=rnd(60,150);
-    mesh.position.set(fw/2+Math.cos(a)*rr, rnd(30,95), fh/2+Math.sin(a)*rr);
-    mesh.scale.setScalar(rnd(9,26));
-    mesh.userData={spin:rnd(0.05,0.25)*(Math.random()<0.5?-1:1)};
-    mesh.userData.sky=true;
-    levelGroup.add(mesh);
-  }
-
-  if(NIGHT>0.03){
-    const cnt=Math.floor(160+NIGHT*220);
-    const pos=new Float32Array(cnt*3);
-    for(let i=0;i<cnt;i++){
-      const th=rnd(0,Math.PI*2), ph=rnd(0.08,1.35);
-      pos[i*3]=Math.cos(th)*Math.cos(ph)*260;
-      pos[i*3+1]=Math.sin(ph)*260;
-      pos[i*3+2]=Math.sin(th)*Math.cos(ph)*260;
-    }
-    const g=new THREE.BufferGeometry();
-    g.setAttribute('position',new THREE.BufferAttribute(pos,3));
-    starfield=new THREE.Points(g,new THREE.PointsMaterial({color:glow(0xdfe6ff,1.3),
-      size:1.6,sizeAttenuation:false,transparent:true,opacity:0.85*NIGHT,fog:false}));
-    starfield.position.set(fw/2,0,fh/2);
-    levelGroup.add(starfield);
-  }
-
-  if(d>=17){
-    const disc=new THREE.Mesh(new THREE.CircleGeometry(26,48),
-      new THREE.MeshBasicMaterial({color:glow(0xff1e08,3.5),fog:false}));
-    const halo=new THREE.Mesh(new THREE.RingGeometry(27,34,64),
-      new THREE.MeshBasicMaterial({color:glow(0xff2b17,3),transparent:true,opacity:0.7,fog:false,
-        side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
-    const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,1,8),
-      new THREE.MeshBasicMaterial({color:glow(0xff2b17,3.5),transparent:true,opacity:0.95,fog:false,
-        blending:THREE.AdditiveBlending,depthWrite:false}));
-    const line=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,1,6),
-      new THREE.MeshBasicMaterial({color:0xff2b17,transparent:true,opacity:0.4,fog:false}));
-    const gring=new THREE.Mesh(new THREE.TorusGeometry(1,0.07,8,40),
-      new THREE.MeshBasicMaterial({color:glow(0xff2b17,2),transparent:true,opacity:0.6,fog:false}));
-    gring.rotation.x=Math.PI/2;
-    beam.visible=false; line.visible=false; gring.visible=false;
-    levelGroup.add(disc,halo,beam,line,gring);
-    moonState={disc,halo,beam,line,ring:gring,
-      pos:new THREE.Vector3(), aim:new THREE.Vector3(),
-      cx:fw/2, cz:fh/2, orbitA:rnd(0,Math.PI*2),
-      state:'idle', t:5.0, teleT:0, fireT:0};
-    setTimeout(()=>{ if(state==='playing'&&depth>=17) SFX.rumble(1.5); },600);
-  }
+  buildBeacon(exitPos.x,0,exitPos.z);
+  buildSkyDecor(fw,fh);
+  if(d>=17) buildMoon();
 
   const interior=[];
   cells.forEach(([x,z],i)=>{
@@ -1460,7 +1485,9 @@ function buildLevel(d){
     const [x,z]=spawnCells[i];
     spawnEnemy((x+0.5)*CS,(z+0.5)*CS,d);
   }
-
+  if(NET.active&&NET.role==='host'){
+    netHostFullWall(); // полная сетка гостям (они в том же лабиринте)
+  }
   saveGame();
 }
 
@@ -1482,11 +1509,13 @@ function addPlatform(x,y,z,type,s){
   if(type==='box'||type==='cyl') mesh.rotation.y=rnd(0,Math.PI);
   levelGroup.add(mesh);
   platforms.push({x, y:y+sh.top*s, z, r:sh.foot*s});
+  if(NET.active&&NET.role==='host') netHostPlat(x,y,z,type,s);
   return mesh;
 }
 function buildInfinityLevel(){
   disposeLevel();
   infinityMode=true;
+  if(NET.active&&NET.role==='guest'){ netGuestInfinity(); return; }
   curGrav=INF_GRAV; curJump=INF_JUMP; curWalk=INF_WALK; curRun=INF_RUN;
   maze=null; wallMesh=null; wallAnim=[]; starfield=null;
   clearEnemiesAndFx();
@@ -1498,6 +1527,7 @@ function buildInfinityLevel(){
   rebuildWhispers();
 
   levelGroup=new THREE.Group(); scene.add(levelGroup);
+  if(NET.active&&NET.role==='host') netHostPlatReset();
 
   const floor=new THREE.Mesh(new THREE.PlaneGeometry(600,600), floorMat.clone());
   floor.material.map=checkerTex.clone();
@@ -1559,23 +1589,7 @@ function buildInfinityLevel(){
   y+=rnd(3.6,4.2);
   addPlatform(x,y,z,'cyl',6);
   exitPos.set(x,y+PLAT_SHAPES.cyl.top*6,z);
-
-  const beacon=new THREE.Mesh(
-    new THREE.CylinderGeometry(0.9,0.9,90,20,1,true),
-    new THREE.MeshBasicMaterial({color:glow(0xffffff,5),transparent:true,opacity:0.22,
-      depthWrite:false,fog:false,side:THREE.DoubleSide})
-  );
-  beacon.position.set(exitPos.x,exitPos.y+45,exitPos.z);
-  beacon.renderOrder=-1;
-  levelGroup.add(beacon);
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.3,0.06,8,40),
-    new THREE.MeshBasicMaterial({color:glow(0xffffff,1.6),fog:false}));
-  ring.rotation.x=Math.PI/2; ring.position.set(exitPos.x,exitPos.y+0.1,exitPos.z);
-  levelGroup.add(ring);
-  const beaconLight=new THREE.PointLight(0xffffff, 1.8, 26, 1);
-  beaconLight.position.set(exitPos.x,exitPos.y+3,exitPos.z);
-  levelGroup.add(beaconLight);
-  levelGroup.userData={beacon,ring};
+  buildBeacon(exitPos.x,exitPos.y,exitPos.z);
 
   for(let i=0;i<24;i++){
     const ang=rnd(0,6.28), rr=rnd(20,85);
@@ -1587,7 +1601,7 @@ function buildInfinityLevel(){
     const ang=rnd(0,6.28), rr=rnd(16,70);
     spawnEnemy(Math.cos(ang)*rr,Math.sin(ang)*rr,17);
   }
-
+  if(NET.active&&NET.role==='host') netHostPlatFlush();
   saveGame();
 }
 
@@ -1813,6 +1827,7 @@ function pickType(d){
   if(r<cube+ico+mgun+octa) return 'OCTA';
   return 'TETRA';
 }
+let _spawnSeq=0;
 function spawnEnemy(x,z,d){
   const t=ETYPES[pickType(d)];
   const mat=new THREE.MeshLambertMaterial({color:0x1c0503,emissive:RED,emissiveIntensity:3.4});
@@ -1827,7 +1842,8 @@ function spawnEnemy(x,z,d){
   scene.add(aim); scene.add(beam);
   eGroup.add(mesh);
   const e={type:t,mesh,aim,beam,center:new THREE.Vector3(x,1.6,z),
-    hp:t.hp*(1+(d-1)*0.06), r:t.r,
+    hp:t.hp*(1+(d-1)*0.06), maxHp:t.hp*(1+(d-1)*0.06), r:t.r,
+    netKey:'e'+(_spawnSeq++)+'_'+d,
     flyY:infinityMode?rnd(3,44):1.6,
     state:'hunt', atkT:rnd(1.2,3.5), chargeT:0, beamT:0, loseT:0,
     burstLeft:0, burstT:0,
@@ -1847,6 +1863,12 @@ function orientCyl(mesh,a,b){
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.normalize());
 }
 function damageEnemy(e,dmg,hitPos){
+  if(NET.active&&NET.role==='guest'){ // урон решает хост
+    e.flash=1;
+    if(hitPos) sparks(hitPos,6,0xff2b17);
+    hitmark(); SFX.hit();
+    return;
+  }
   e.hp-=dmg; e.flash=1;
   hitmark();
   SFX.hit();
@@ -1854,6 +1876,11 @@ function damageEnemy(e,dmg,hitPos){
   else if(hitPos) sparks(hitPos,6,0xff2b17);
 }
 function killEnemy(e){
+  if(NET.active&&NET.role==='host'){
+    // хост подтверждает смерть и сообщает всем (гость получает ev_kill)
+    netHostKill(e);
+    return;
+  }
   chargeSound(false,e);
   scene.remove(e.aim); scene.remove(e.beam);
   eGroup.remove(e.mesh);
@@ -1868,32 +1895,45 @@ function killEnemy(e){
   if(!infinityMode&&Math.random()<0.16) spawnPickup(e.center.x,e.center.z);
   updateHUD();
 }
-function enemyBeam(e,aim,dmg,thick,dur,snd){
+function enemyBeam(e,aim,dmg,thick,dur,mode){
   const dir=new THREE.Vector3().subVectors(aim,e.center).normalize();
   const wallD=castWall3D(e.center,dir,60);
   const end=e.center.clone().addScaledVector(dir,wallD);
   orientCyl(e.beam,e.center,end);
   e.beam.scale.x=e.beam.scale.z=thick;
-  e.beam.visible=true; e.beamT=dur;
-  snd(clamp(1-e.center.distanceTo(player.pos)/45,0.12,0.38));
+  e.beam.visible=true; e.beamT=mode==='mg'?0.07:0.12;
+  const vol=clamp(1-e.center.distanceTo(player.pos)/45,0.12,0.38);
+  if(mode==='tank') SFX.zapTank(vol); else if(mode==='mg') SFX.mgun(vol); else SFX.zap(vol);
   sparks(end,4,0xff2b17);
+  const hitR=thick>1?0.75:0.62;
+  // хост: проверяем всех игроков (себя + гостей)
+  if(NET.active&&NET.role==='host'){
+    netHostBeamDamage(e,dir,end,hitR,dmg);
+    netHostBeamVisual(e,end,thick,mode);
+    return;
+  }
+  // соло: только игрок
   const rel=new THREE.Vector3().subVectors(player.pos.clone().add(new THREE.Vector3(0,1.1,0)),e.center);
   const proj=rel.dot(dir);
   if(proj>0){
     const perp=rel.sub(dir.clone().multiplyScalar(proj)).length();
-    const hitR=thick>1?0.75:0.62;
     if(perp<hitR&&LOS(e.center.x,e.center.z,player.pos.x,player.pos.z)){
       damagePlayer(dmg*(1+(depth-1)*0.04));
     }
   }
 }
 function updateEnemies(dt){
+  if(NET.active&&NET.role==='guest'){ netGuestEnemiesTick(dt); return; }
+  if(NET.active&&NET.role==='host'){ netHostEnemiesTick(dt); return; }
+  updateEnemiesLocal(dt);
+}
+function updateEnemiesLocal(dt){
   const pChest=new THREE.Vector3(player.pos.x,player.pos.y+1.1,player.pos.z);
   for(const e of enemies){
     e.phase+=dt;
     if(e.spawnT>0){ e.spawnT-=dt; e.mesh.scale.setScalar(clamp(1-e.spawnT/0.5,0.01,1)); }
     e.flash=Math.max(0,e.flash-dt*5);
-    e.mesh.material.emissiveIntensity=3.4+NIGHT*0.9+e.flash*2;
+    e.mesh.material.emissiveIntensity=3.4+NIGHT*0.45+e.flash*1.2;
     const dx=player.pos.x-e.center.x, dz=player.pos.z-e.center.z;
     const dist=Math.hypot(dx,dz)||0.001;
     const los=dist<60?LOS(e.center.x,e.center.z,player.pos.x,player.pos.z):false;
@@ -1925,8 +1965,7 @@ function updateEnemies(dt){
           e.state='burst'; e.burstLeft=e.type.burst; e.burstT=0.05;
         } else {
           e.state='hunt'; e.atkT=e.type.fireInt*rnd(0.85,1.3);
-          enemyBeam(e,e.aimP,e.type.dmg,e.type.deep?2.2:1,0.12,
-            v=>e.type.deep?SFX.zapTank(v):SFX.zap(v));
+          enemyBeam(e,e.aimP,e.type.dmg,e.type.deep?2.2:1,0.12,e.type.deep?'tank':null);
         }
       }
       mvx=dx/dist*0.15; mvz=dz/dist*0.15;
@@ -1939,7 +1978,7 @@ function updateEnemies(dt){
           e.burstLeft--; e.burstT=e.type.burstGap;
           const t=e.aimP.clone(), sp=0.5;
           t.x+=rnd(-sp,sp); t.y+=rnd(-sp*0.4,sp*0.4); t.z+=rnd(-sp,sp);
-          enemyBeam(e,t,e.type.dmg,0.5,0.07,v=>SFX.mgun(v));
+          enemyBeam(e,t,e.type.dmg,0.5,0.07,'mg');
           if(e.burstLeft<=0){ e.state='hunt'; e.atkT=e.type.fireInt*rnd(0.85,1.2); }
         }
       }
@@ -1965,6 +2004,7 @@ function updateEnemies(dt){
 
 // ---------- красная луна ----------
 function updateMoon(dt){
+  if(NET.active&&NET.role==='guest'){ netGuestMoonTick(dt); return; }
   const m=moonState;
   if(!m) return;
   m.orbitA+=dt*0.05;
@@ -1998,6 +2038,15 @@ function updateMoon(dt){
       m.beam.visible=true; m.ring.visible=false; m.line.visible=false;
       orientCyl(m.beam,m.pos,_v.set(m.aim.x,0,m.aim.z));
       m.beam.scale.x=m.beam.scale.z=1.3;
+      const hitIds=[];
+      if(NET.active&&NET.role==='host'){
+        for(const [id,p] of netPlayers){
+          if(performance.now()-p.ts>3000) continue;
+          const dd=Math.hypot(p.x-m.aim.x,p.z-m.aim.z);
+          if(dd<MOON_RADIUS&&LOS(m.aim.x,m.aim.z,p.x,p.z)) hitIds.push(id);
+        }
+        netHostMoonFire(m.aim.x,m.aim.z,hitIds);
+      }
       const dd=Math.hypot(player.pos.x-m.aim.x,player.pos.z-m.aim.z);
       if(dd<MOON_RADIUS&&LOS(m.aim.x,m.aim.z,player.pos.x,player.pos.z))
         damagePlayer(MOON_DMG);
@@ -2082,6 +2131,7 @@ function die(){
   bestDepth=Math.max(bestDepth,depth);
   enemies.forEach(e=>chargeSound(false,e));
   laserOff(); moonSound(false);
+  if(NET.active) netAnnounceDeath();
   document.exitPointerLock&&document.exitPointerLock();
   showDeath();
 }
@@ -2243,12 +2293,6 @@ function tryFire(){
   if(st.reloading>0) return;
   if(st.ammo<=0){ SFX.dry(); startReload(); return; }
   st.ammo--; cooldown=w.rate; recoil=1;
-    if(NET.active&&NET.role==='guest'){
-    const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
-    send(0,{t:'fire',w:curW,
-      p:{x:+player.pos.x.toFixed(2),y:+player.pos.y.toFixed(2),z:+player.pos.z.toFixed(2)},
-      d:{x:+d.x.toFixed(3),y:+d.y.toFixed(3),z:+d.z.toFixed(3)}});
-  }
   player.pitch=clamp(player.pitch+w.kick,-1.5,1.5);
   const mz=gunModels[curW].userData.muzzle;
   flashMesh.position.copy(mz); flashMesh.visible=true;
@@ -2256,12 +2300,24 @@ function tryFire(){
   flashMesh.scale.setScalar(rnd(0.8,1.5));
   flashLight.intensity=curW===1?3.6:2.6;
   setTimeout(()=>flashMesh.visible=false,55);
+  // гость: локальный звук/вспышка, урон решает хост
+  if(NET.active&&NET.role==='guest'){
+    if(curW===0) SFX.rev(); else if(curW===4) SFX.ak(); else SFX.shotgun();
+    const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    send(0,{t:'fire',w:curW,
+      p:{x:+player.pos.x.toFixed(2),y:+player.pos.y.toFixed(2),z:+player.pos.z.toFixed(2)},
+      d:{x:+d.x.toFixed(3),y:+d.y.toFixed(3),z:+d.z.toFixed(3)}});
+    if(w.rocket) spawnRocket(); // локальная визуальная ракета
+    const gv=new THREE.Vector3(rnd(1,2.4),rnd(1.5,2.6),rnd(-0.4,0.4)).applyQuaternion(camera.quaternion);
+    spawnParticle(camera.position.clone().add(new THREE.Vector3(0.3,-0.2,0)),gv,1.2,0.05,0xb98a2e,true,1);
+    if(st.ammo<=0) setTimeout(startReload,300);
+    updateHUD();
+    return;
+  }
   if(w.rocket){
     SFX.rocket(); spawnRocket();
   } else {
-    if(curW===0) SFX.rev();
-    else if(curW===4) SFX.ak();
-    else SFX.shotgun();
+    if(curW===0) SFX.rev(); else if(curW===4) SFX.ak(); else SFX.shotgun();
     const o=camera.position.clone();
     for(let i=0;i<w.pellets;i++){
       const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
@@ -2270,8 +2326,7 @@ function tryFire(){
       hitscan(o,d,w.dmg);
     }
     const gv=new THREE.Vector3(rnd(1,2.4),rnd(1.5,2.6),rnd(-0.4,0.4)).applyQuaternion(camera.quaternion);
-    spawnParticle(camera.position.clone().add(new THREE.Vector3(0.3,-0.2,0)),gv,
-      1.2,0.05,0xb98a2e,true,1);
+    spawnParticle(camera.position.clone().add(new THREE.Vector3(0.3,-0.2,0)),gv,1.2,0.05,0xb98a2e,true,1);
     if(gunModels[curW].userData.drum) gunModels[curW].userData.drum.rotation.z+=Math.PI/3;
   }
   if(st.ammo<=0) setTimeout(startReload,300);
@@ -2295,29 +2350,31 @@ function fireLaserTick(){
     touchUI.fireBlocked=true;
     laserOff(); SFX.dry(); return;
   }
-  const o=camera.position.clone();
-  const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
-  const wallD=castWall3D(o,d,200);
-  let killed=0;
-  for(let i=enemies.length-1;i>=0;i--){
-    const e=enemies[i];
-    const t=raySphere(o,d,e.center,e.r+0.45);
-    if(t>0&&t<wallD){ killEnemy(e); killed++; }
+  // гость: урон через хоста
+  if(NET.active&&NET.role==='guest'){
+    const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    send(0,{t:'fire',w:3,
+      p:{x:+player.pos.x.toFixed(2),y:+player.pos.y.toFixed(2),z:+player.pos.z.toFixed(2)},
+      d:{x:+d.x.toFixed(3),y:+d.y.toFixed(3),z:+d.z.toFixed(3)}});
+  } else {
+    const o=camera.position.clone();
+    const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    const wallD=castWall3D(o,d,200);
+    let killed=0;
+    for(let i=enemies.length-1;i>=0;i--){
+      const e=enemies[i];
+      const t=raySphere(o,d,e.center,e.r+0.45);
+      if(t>0&&t<wallD){ killEnemy(e); killed++; }
+    }
+    const end=o.clone().addScaledVector(d,wallD);
+    sparks(end,killed>0?4:2,0xff2b17);
   }
-  const end=o.clone().addScaledVector(d,wallD);
-  sparks(end,killed>0?4:2,0xff2b17);
   if(!freeBeam){ player.hp-=LASER_COST; player.lastHurt=gameT; }
   SFX.ltick();
   updateHUD();
 }
 function updateLaserBeam(){
   const o=camera.position.clone().add(new THREE.Vector3(0.22,-0.24,-0.3).applyQuaternion(camera.quaternion));
-    if(NET.active&&NET.role==='guest'){
-    const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
-    send(0,{t:'fire',w:3,
-      p:{x:+player.pos.x.toFixed(2),y:+player.pos.y.toFixed(2),z:+player.pos.z.toFixed(2)},
-      d:{x:+d.x.toFixed(3),y:+d.y.toFixed(3),z:+d.z.toFixed(3)}});
-  }
   const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
   const wd=castWall3D(o,d,200);
   const end=o.clone().addScaledVector(d,wd);
@@ -2659,8 +2716,1052 @@ function knobTo(base,knob,cx,cy){
 addEventListener('contextmenu',e=>{ if(platform==='mobile') e.preventDefault(); });
 document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 document.addEventListener('gesturestart',e=>e.preventDefault());
+</script>
 
-// ---------- главный цикл ----------
+<script>
+/* ============================================================
+   БЕССОННИЦА · СЕТЬ — транспорт + лобби + хост-авторитарный мир
+   ============================================================ */
+(function(){
+'use strict';
+
+const ICE={
+  iceServers:[
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'stun:stun1.l.google.com:19302'},
+    {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+    {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
+  ]
+};
+const enc=s=>btoa(unescape(encodeURIComponent(s)));
+const dec=s=>decodeURIComponent(escape(atob(s.trim())));
+function waitIce(pc,ms){
+  return new Promise(res=>{
+    if(pc.iceGatheringState==='complete') return res();
+    let done=false;
+    const fin=()=>{ if(!done){done=true;pc.removeEventListener('icegatheringstatechange',chk);res();} };
+    const chk=()=>{ if(pc.iceGatheringState==='complete') fin(); };
+    pc.addEventListener('icegatheringstatechange',chk);
+    setTimeout(fin,ms||3500);
+  });
+}
+
+const NET={
+  active:false, role:null, myId:0, name:'', runSeed:0,
+  conns:new Map(), ghosts:new Map(), log:[], ownPlat:'pc', skipBuild:false
+};
+window.NET=NET;
+
+/* стили лобби */
+const st=document.createElement('style');
+st.textContent=`
+.net-box{margin-top:20px;text-align:left}
+.net-name{width:100%;max-width:280px;font-family:'IBM Plex Mono',monospace;font-size:13px;
+  background:rgba(255,255,255,.55);border:1px solid rgba(20,18,15,.35);color:var(--ink);
+  padding:8px 10px;text-align:center}
+.net-ta{width:100%;height:58px;font-family:'IBM Plex Mono',monospace;font-size:9.5px;line-height:1.35;
+  background:rgba(255,255,255,.6);border:1px solid rgba(20,18,15,.3);color:var(--ink);
+  padding:7px;resize:none;box-sizing:border-box}
+.net-btn{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  padding:9px 14px;background:none;border:1px solid rgba(20,18,15,.45);color:var(--ink);
+  cursor:pointer;transition:all .13s}
+.net-btn:hover{background:var(--ink);color:var(--paper)}
+.net-btn.go{border-color:var(--red);color:var(--red)}
+.net-btn.go:hover{background:var(--red);color:#fff}
+.net-btn:disabled{opacity:.35;pointer-events:none}
+.net-slot{border:1px solid rgba(20,18,15,.28);padding:12px 14px;margin-top:10px;text-align:left}
+.net-slot .st-title{font-size:11px;letter-spacing:.22em;text-transform:uppercase;font-weight:700}
+.net-slot .st-row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
+.net-status{font-size:10px;letter-spacing:.18em;text-transform:uppercase}
+.net-status.on{color:#1d7a34;font-weight:700}
+.net-status.off{color:var(--red)}
+.net-status.wait{opacity:.55}
+.net-note{font-size:10px;letter-spacing:.14em;opacity:.6;margin-top:12px;text-align:center}
+.net-ping{font-size:11px;letter-spacing:.18em;margin-top:6px;text-align:center}
+`;
+document.head.appendChild(st);
+
+function say(msg){ NET.log.push(msg); if(NET.log.length>5) NET.log.shift(); }
+
+/* призраки */
+const GHOST_COLORS=[0x2f7cff,0xe0b83c,0xe8e2d4];
+function makeGhost(id,name){
+  const col=GHOST_COLORS[id%3];
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.OctahedronGeometry(0.55),
+    new THREE.MeshLambertMaterial({color:0x14120f,emissive:col,emissiveIntensity:2.2}));
+  g.add(body);
+  g.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.OctahedronGeometry(0.55)),
+    new THREE.LineBasicMaterial({color:0x0d0b09})));
+  const c=document.createElement('canvas'); c.width=256; c.height=64;
+  const x=c.getContext('2d');
+  x.font='700 30px "IBM Plex Mono",monospace'; x.textAlign='center';
+  x.fillStyle='#'+col.toString(16).padStart(6,'0');
+  x.fillText((name||'игрок '+id).slice(0,12),128,40);
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),fog:false}));
+  spr.scale.set(2.2,0.55,1); spr.position.y=1.15;
+  g.add(spr);
+  g.position.set(0,-99,0);
+  scene.add(g);
+  return {group:g,body,buf:[],yaw:0,name:name||('игрок '+id)};
+}
+function dropGhost(id){
+  const gh=NET.ghosts.get(id);
+  if(gh){ scene.remove(gh.group); NET.ghosts.delete(id); }
+}
+function ghostPos(id,msg){
+  let gh=NET.ghosts.get(id);
+  if(!gh){ gh=makeGhost(id,msg.n||''); NET.ghosts.set(id,gh); }
+  gh.buf.push({t:performance.now()/1000,x:msg.x,y:msg.y,z:msg.z});
+  if(gh.buf.length>6) gh.buf.shift();
+  gh.yaw=msg.yw;
+}
+
+/* ---------- базовый роутер ---------- */
+function send(id,obj){
+  const c=NET.conns.get(id);
+  if(c&&c.dc&&c.dc.readyState==='open'){ try{ c.dc.send(JSON.stringify(obj)); }catch(e){} }
+}
+function broadcast(obj,exceptId){
+  for(const [id,c] of NET.conns)
+    if(id!==exceptId&&c.dc&&c.dc.readyState==='open'){
+      try{ c.dc.send(JSON.stringify(obj)); }catch(e){}
+    }
+}
+function baseData(fromId,str){
+  let m; try{ m=JSON.parse(str); }catch(e){ return; }
+  switch(m.t){
+    case 'hello':
+      if(NET.role==='host'){
+        send(fromId,{t:'welcome',id:fromId,host:NET.name,seed:NET.runSeed});
+        say((m.n||'гость')+' вошёл в сон');
+      }
+      break;
+    case 'welcome':
+      NET.myId=m.id;
+      say('хост принял');
+      break;
+    case 'pos':
+      ghostPos(fromId,m);
+      if(NET.role==='host'){
+        broadcast(m,fromId);
+        netTrackPlayer(fromId,m);
+      }
+      break;
+    case 'ping': send(fromId,{t:'pong',ts:m.ts}); break;
+    case 'pong':{
+      const c=NET.conns.get(fromId);
+      if(c) c.rtt=Math.round(performance.now()-m.ts);
+      break;
+    }
+  }
+}
+
+/* ---------- WebRTC ---------- */
+function bindChannel(id,dc,pc){
+  NET.conns.set(id,{pc,dc,rtt:0});
+  dc.onmessage=e=>onData(id,e.data);
+  dc.onopen=()=>{
+    say('слот '+id+' на связи');
+    send(id,{t:'hello',n:NET.name,id:NET.myId});
+    refreshLobby();
+    const c=NET.conns.get(id);
+    c.pingInt=setInterval(()=>{
+      if(dc.readyState==='open') send(id,{t:'ping',ts:performance.now()});
+      else clearInterval(c.pingInt);
+    },2000);
+  };
+  dc.onclose=()=>{ dropGhost(id); say('слот '+id+' отключился'); refreshLobby(); };
+  pc.onconnectionstatechange=()=>{
+    if(['failed','disconnected','closed'].includes(pc.connectionState)){
+      dropGhost(id); say('слот '+id+' потерян'); refreshLobby();
+    }
+  };
+}
+async function hostMakeOffer(slot){
+  const pc=new RTCPeerConnection(ICE);
+  const dc=pc.createDataChannel('insomnia',{ordered:true});
+  bindChannel(slot,dc,pc);
+  await pc.setLocalDescription(await pc.createOffer());
+  await waitIce(pc);
+  return enc(JSON.stringify(pc.localDescription));
+}
+async function hostTakeAnswer(slot,answerStr){
+  const c=NET.conns.get(slot);
+  if(!c) throw new Error('слот не создан');
+  await c.pc.setRemoteDescription(JSON.parse(dec(answerStr)));
+}
+async function guestMakeAnswer(offerStr){
+  const pc=new RTCPeerConnection(ICE);
+  pc.ondatachannel=e=>bindChannel(0,e.channel,pc);
+  await pc.setRemoteDescription(JSON.parse(dec(offerStr)));
+  await pc.setLocalDescription(await pc.createAnswer());
+  await waitIce(pc);
+  return enc(JSON.stringify(pc.localDescription));
+}
+
+/* ---------- лобби ---------- */
+function netLobby(){
+  NET.role=null; NET.name='';
+  overlayShow(`
+    <h1>СОН <em>ВТРОЁМ</em></h1>
+    <div class="sub">прямое соединение · без серверов</div>
+    <div class="net-box" style="text-align:center">
+      <input class="net-name" id="net-name" maxlength="12" placeholder="твоё имя в сне">
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">
+        <button class="net-btn go" id="net-host">я хост · создать сон</button>
+        <button class="net-btn" id="net-guest">я гость · войти по коду</button>
+      </div>
+      <div class="net-note">управление: <b id="net-plat-lab">клавиатура</b> ·
+        <button class="net-btn" id="net-plat" style="padding:4px 8px">сменить</button></div>
+    </div>
+    <div class="quote">хост создаёт код и отправляет друзьям в любой мессенджер<br>
+    друзья возвращают ответный код — и сон становится общим</div>
+    <div class="menu-link">[ назад к выбору платформы ]</div>`);
+  $('net-host').onclick=()=>{ NET.name=($('net-name').value||'хост').slice(0,12); hostLobby(); };
+  $('net-guest').onclick=()=>{ NET.name=($('net-name').value||'гость').slice(0,12); guestLobby(); };
+  $('net-plat').onclick=()=>{
+    NET.ownPlat=NET.ownPlat==='pc'?'mobile':'pc';
+    $('net-plat-lab').textContent=NET.ownPlat==='pc'?'клавиатура':'экран';
+  };
+}
+function hostLobby(){
+  NET.role='host'; NET.myId=0;
+  overlayShow(`
+    <h1>ХОСТ <em>СНА</em></h1>
+    <div class="sub">создай код для каждого из двух друзей</div>
+    <div class="net-box">
+      <div class="net-slot" id="net-slot1">
+        <div class="st-title">друг 1</div>
+        <div class="net-status off" id="net-ss1">не подключён</div>
+        <div class="st-row">
+          <button class="net-btn" id="net-mk1">создать код</button>
+          <textarea class="net-ta" id="net-off1" readonly placeholder="код для первого друга"></textarea>
+          <button class="net-btn" id="net-cp1">копировать</button>
+        </div>
+        <div class="st-row">
+          <textarea class="net-ta" id="net-ans1" placeholder="вставь ответный код первого друга"></textarea>
+          <button class="net-btn go" id="net-ok1">подтвердить</button>
+        </div>
+      </div>
+      <div class="net-slot" id="net-slot2">
+        <div class="st-title">друг 2</div>
+        <div class="net-status off" id="net-ss2">не подключён</div>
+        <div class="st-row">
+          <button class="net-btn" id="net-mk2">создать код</button>
+          <textarea class="net-ta" id="net-off2" readonly placeholder="код для второго друга"></textarea>
+          <button class="net-btn" id="net-cp2">копировать</button>
+        </div>
+        <div class="st-row">
+          <textarea class="net-ta" id="net-ans2" placeholder="вставь ответный код второго друга"></textarea>
+          <button class="net-btn go" id="net-ok2">подтвердить</button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:center;margin-top:16px">
+        <button class="net-btn go" id="net-start" disabled>начать общий сон</button>
+      </div>
+      <div class="net-ping" id="net-pings"></div>
+    </div>
+    <div class="quote">начать можно и вдвоём — второй слот оставь пустым</div>`);
+  const offers=[null,null];
+  for(const s of [1,2]){
+    $('net-mk'+s).onclick=async()=>{
+      try{
+        // слоты назначаем по порядку создания
+        const slot=NET.conns.size+1;
+        offers[s-1]=await hostMakeOffer(slot);
+        $('net-off'+s).value=offers[s-1];
+      }catch(e){ $('net-off'+s).value='ошибка: '+e.message; }
+    };
+    $('net-cp'+s).onclick=()=>{
+      const ta=$('net-off'+s); ta.select();
+      try{ navigator.clipboard.writeText(ta.value); }catch(e){ document.execCommand('copy'); }
+    };
+    $('net-ok'+s).onclick=async()=>{
+      try{
+        await hostTakeAnswer(s,$('net-ans'+s).value);
+        $('net-ss'+s).textContent='устанавливается…'; $('net-ss'+s).className='net-status wait';
+      }catch(e){ $('net-ss'+s).textContent='код не принят'; $('net-ss'+s).className='net-status off'; }
+    };
+  }
+  $('net-start').onclick=()=>{
+    NET.runSeed=(Math.random()*1e9)|0;
+    broadcast({t:'start',seed:NET.runSeed,mod});
+    netBegin(NET.runSeed);
+  };
+  refreshLobby();
+}
+function guestLobby(){
+  NET.role='guest';
+  overlayShow(`
+    <h1>ГОСТЬ <em>СНА</em></h1>
+    <div class="sub">вставь код от хоста — получишь ответный</div>
+    <div class="net-box">
+      <textarea class="net-ta" id="net-off-in" style="height:74px" placeholder="вставь код хоста сюда"></textarea>
+      <div class="st-row" style="margin-top:8px">
+        <button class="net-btn go" id="net-mk">создать ответный код</button>
+      </div>
+      <textarea class="net-ta" id="net-ans-out" readonly placeholder="твой код — отправь его обратно хосту"></textarea>
+      <div class="st-row">
+        <button class="net-btn" id="net-cp">копировать</button>
+      </div>
+      <div class="net-status wait" id="net-ss">ожидание соединения…</div>
+      <div class="net-ping" id="net-pings"></div>
+    </div>
+    <div class="quote">когда хост подтвердит код и нажмёт «начать общий сон» — вы окажетесь в одном лабиринте</div>
+    <div class="menu-link">[ назад ]</div>`);
+  $('net-mk').onclick=async()=>{
+    try{
+      const ans=await guestMakeAnswer($('net-off-in').value);
+      $('net-ans-out').value=ans;
+      $('net-ss').textContent='код отправлен — жди начала';
+      $('net-ss').className='net-status wait';
+    }catch(e){
+      $('net-ss').textContent='код хоста не принят';
+      $('net-ss').className='net-status off';
+    }
+  };
+  $('net-cp').onclick=()=>{
+    const ta=$('net-ans-out'); ta.select();
+    try{ navigator.clipboard.writeText(ta.value); }catch(e){ document.execCommand('copy'); }
+  };
+}
+function refreshLobby(){
+  if(NET.role!=='host') return;
+  let online=0;
+  for(const s of [1,2]){
+    const c=NET.conns.get(s);
+    const el=document.getElementById('net-ss'+s);
+    if(!el) continue;
+    if(c&&c.dc&&c.dc.readyState==='open'){
+      el.textContent='на связи'; el.className='net-status on'; online++;
+    }
+  }
+  const start=document.getElementById('net-start');
+  if(start) start.disabled=(online<1);
+  const pings=document.getElementById('net-pings');
+  if(pings){
+    const rows=[];
+    for(const [id,c] of NET.conns)
+      if(c.dc&&c.dc.readyState==='open') rows.push(`друг ${id}: ${c.rtt||'…'} мс`);
+    pings.textContent=rows.join(' · ');
+  }
+}
+setInterval(refreshLobby,1500);
+
+/* ---------- начало общего сна ---------- */
+function netBegin(seed){
+  NET.runSeed=seed; NET.active=true;
+  platform=NET.ownPlat||'pc';
+  initAudio();
+  applyPlatform();
+  score=0; kills=0; deaths=0; echo=0; depth=1; infinityMode=false;
+  buildLevel(1); resetPlayer();
+  if(platform==='pc'){
+    state='paused';
+    overlayShow(`
+      <h1 style="font-size:34px">ОБЩИЙ СОН <em>НАЧАЛСЯ</em></h1>
+      <div class="quote">вы в одном лабиринте. фигуры видят вас всех.</div>
+      <div class="go">[ щёлкни, чтобы взять управление ]</div>`);
+    pendingState='playing';
+  } else {
+    startPlaying();
+  }
+  const hint=document.getElementById('hint');
+  hint.textContent='общий сон: '+(NET.role==='host'?'ты хост · ':'')+'вы в одном лабиринте';
+  hint.style.opacity=0.7;
+  setTimeout(()=>hint.style.opacity=0,6000);
+}
+
+/* ---------- гостевая сборка уровня ---------- */
+const NETW={snapT:0,snapInt:1/12,scoreT:0,seq:0,
+  wallIdx:new Map(), platSpecs:[], platMeshes:[]};
+
+function netGuestBuild(d){
+  clearEnemiesAndFx();
+  starfield=null; wallAnim=[];
+  scoreAtLevelStart=score;
+  applyAtmosphere(d);
+  setAudioMood(false);
+  rebuildWhispers();
+  bestDepth=Math.max(bestDepth,d);
+  levelGroup=new THREE.Group(); scene.add(levelGroup);
+  const n=8+Math.min(d,7);
+  maze=generateMaze(n,NET.runSeed+d*7919);
+  const fw=maze.W*CS, fh=maze.H*CS;
+  const floor=new THREE.Mesh(new THREE.PlaneGeometry(fw,fh), floorMat.clone());
+  floor.material.map=checkerTex.clone();
+  floor.material.map.needsUpdate=true;
+  floor.material.map.repeat.set(fw/2,fh/2);
+  floor.material.color.setScalar(1-0.45*NIGHT);
+  floor.rotation.x=-Math.PI/2;
+  floor.position.set(fw/2,0,fh/2);
+  levelGroup.add(floor);
+  const cells=[];
+  for(let z=0;z<maze.H;z++)for(let x=0;x<maze.W;x++)
+    if(maze.grid[z][x]===1) cells.push([x,z]);
+  wallMesh=new THREE.InstancedMesh(wallGeo,wallMat,cells.length);
+  wallMesh.frustumCulled=false;
+  const m4=new THREE.Matrix4();
+  NETW.wallIdx=new Map();
+  cells.forEach(([x,z],i)=>{
+    m4.makeTranslation((x+0.5)*CS,WALL_H/2,(z+0.5)*CS);
+    wallMesh.setMatrixAt(i,m4);
+    NETW.wallIdx.set(x+'_'+z,i);
+  });
+  levelGroup.add(wallMesh);
+  const distMap=Array.from({length:maze.H},()=>new Array(maze.W).fill(-1));
+  const q=[[1,1]]; distMap[1][1]=0; let far=[1,1],fd=0;
+  while(q.length){
+    const [x,z]=q.shift();
+    for(const [dx,dz] of DIRS4){
+      const nx=x+dx,nz=z+dz;
+      if(nx<0||nz<0||nx>=maze.W||nz>=maze.H) continue;
+      if(maze.grid[nz][nx]===0&&distMap[nz][nx]<0){
+        distMap[nz][nx]=distMap[z][x]+1;
+        if(distMap[nz][nx]>fd){ fd=distMap[nz][nx]; far=[nx,nz]; }
+        q.push([nx,nz]);
+      }
+    }
+  }
+  exitPos.set((far[0]+0.5)*CS,0,(far[1]+0.5)*CS);
+  buildBeacon(exitPos.x,0,exitPos.z);
+  buildSkyDecor(fw,fh);
+  if(d>=17) buildMoon();
+  // врагов пришлёт хост первым снимком
+}
+function netGuestInfinity(){
+  infinityMode=true;
+  curGrav=INF_GRAV; curJump=INF_JUMP; curWalk=INF_WALK; curRun=INF_RUN;
+  maze=null; wallMesh=null; wallAnim=[]; starfield=null;
+  clearEnemiesAndFx();
+  scoreAtLevelStart=score;
+  applyInfinityAtmosphere(); setAudioMood(true); rebuildWhispers();
+  levelGroup=new THREE.Group(); scene.add(levelGroup);
+  const floor=new THREE.Mesh(new THREE.PlaneGeometry(600,600), floorMat.clone());
+  floor.material.map=checkerTex.clone(); floor.material.map.needsUpdate=true;
+  floor.material.map.repeat.set(300,300);
+  floor.rotation.x=-Math.PI/2;
+  levelGroup.add(floor);
+  dawnRing=new THREE.Mesh(new THREE.RingGeometry(240,246,96),
+    new THREE.MeshBasicMaterial({color:glow(0xffb37a,2),transparent:true,opacity:0.85,fog:false,
+      side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+  dawnRing.rotation.x=-Math.PI/2; dawnRing.position.set(0,22,0); levelGroup.add(dawnRing);
+  dawnGlow=new THREE.Mesh(new THREE.RingGeometry(246,330,96),
+    new THREE.MeshBasicMaterial({color:glow(0xff8a4a,1.8),transparent:true,opacity:0.22,fog:false,
+      side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+  dawnGlow.rotation.x=-Math.PI/2; dawnGlow.position.set(0,20,0); levelGroup.add(dawnGlow);
+  const cnt=140, pos=new Float32Array(cnt*3);
+  for(let i=0;i<cnt;i++){
+    const th=rnd(0,Math.PI*2), ph=rnd(0.35,1.4);
+    pos[i*3]=Math.cos(th)*Math.cos(ph)*260; pos[i*3+1]=Math.sin(ph)*260; pos[i*3+2]=Math.sin(th)*Math.cos(ph)*260;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  starfield=new THREE.Points(g,new THREE.PointsMaterial({color:glow(0xdfe6ff,1.3),
+    size:1.4,sizeAttenuation:false,transparent:true,opacity:0.3,fog:false}));
+  levelGroup.add(starfield);
+  const skyGeos=[new THREE.IcosahedronGeometry(1,1),new THREE.TorusGeometry(1,0.3,8,26),
+    new THREE.OctahedronGeometry(1,0),new THREE.TorusKnotGeometry(1,0.25,60,10)];
+  for(let i=0;i<10;i++){
+    const sg=skyGeos[rndi(0,skyGeos.length-1)];
+    const mat=new THREE.MeshBasicMaterial({color:i<3?RED:0x8a93b8,
+      wireframe:true,transparent:true,fog:false,opacity:i<3?0.4:0.25});
+    const mesh=new THREE.Mesh(sg,mat);
+    const a=rnd(0,Math.PI*2), rr2=rnd(90,180);
+    mesh.position.set(Math.cos(a)*rr2, rnd(35,110), Math.sin(a)*rr2);
+    mesh.scale.setScalar(rnd(10,30));
+    mesh.userData={spin:rnd(0.05,0.2)*(Math.random()<0.5?-1:1)};
+    mesh.userData.sky=true;
+    levelGroup.add(mesh);
+  }
+  buildBeacon(0,0,0);
+  NETW.platMeshes=[]; platforms.length=0;
+  send(0,{t:'req_plats'});
+}
+
+/* ---------- хост: игроки ---------- */
+const netPlayers=new Map();
+function netTrackPlayer(id,msg){
+  netPlayers.set(id,{x:msg.x,y:msg.y,z:msg.z,ts:performance.now()});
+}
+function netPlayerVec(id){
+  const p=netPlayers.get(id);
+  return p?new THREE.Vector3(p.x,p.y,p.z):null;
+}
+
+/* ---------- хост: снимки ---------- */
+function netHostTick(dt){
+  if(!NET.active||NET.role!=='host') return;
+  NETW.snapT+=dt;
+  if(NETW.snapT>=NETW.snapInt){
+    NETW.snapT=0;
+    netHostSnap();
+  }
+  NETW.scoreT+=dt;
+  if(NETW.scoreT>5){
+    NETW.scoreT=0;
+    broadcast({t:'ev_score',s:score,e:echo,k:kills,d:deaths});
+  }
+}
+function netHostSnap(){
+  if(NET.role!=='host') return;
+  NETW.seq++;
+  const en=[];
+  for(const e of enemies){
+    let ti=0;
+    if(e.type===ETYPES.OCTA)ti=1; else if(e.type===ETYPES.CUBE)ti=2;
+    else if(e.type===ETYPES.ICO)ti=3; else if(e.type===ETYPES.MGUN)ti=4;
+    en.push([e.netKey,+e.center.x.toFixed(2),+e.center.y.toFixed(2),+e.center.z.toFixed(2),
+      +e.mesh.rotation.y.toFixed(2),ti,+(e.maxHp?e.hp/e.maxHp:1).toFixed(2)]);
+  }
+  const s={t:'snap',d:depth,en,
+    ex:+exitPos.x.toFixed(1),ey:+exitPos.y.toFixed(1),ez:+exitPos.z.toFixed(1)};
+  if(moonState&&moonState.aim) s.mn=[+moonState.pos.x.toFixed(1),+moonState.pos.z.toFixed(1),
+    moonState.state,moonState.state==='tele'?+moonState.teleT.toFixed(2):0,
+    +moonState.aim.x.toFixed(1),+moonState.aim.z.toFixed(1)];
+  broadcast(s);
+}
+function netHostFullWall(){
+  // гостям — изменения сетки с прошлого снимка
+  if(!maze) return;
+  if(NETW.wallCacheD!==depth||!NETW.gridCache){
+    NETW.wallCacheD=depth;
+    NETW.gridCache=maze.grid.map(r=>r.slice());
+    const full=[];
+    for(let z=0;z<maze.H;z++)for(let x=0;x<maze.W;x++) full.push([x,z,maze.grid[z][x]]);
+    broadcast({t:'ev_wall',ch:full});
+  } else {
+    const ch=[];
+    for(let z=0;z<maze.H;z++)for(let x=0;x<maze.W;x++){
+      if(maze.grid[z][x]!==NETW.gridCache[z][x]){
+        ch.push([x,z,maze.grid[z][x]]);
+        NETW.gridCache[z][x]=maze.grid[z][x];
+      }
+    }
+    if(ch.length) broadcast({t:'ev_wall',ch});
+  }
+}
+function netHostPlat(x,y,z,type,s){
+  NETW.platSpecs.push([+x.toFixed(2),+y.toFixed(2),+z.toFixed(2),type,+s.toFixed(2)]);
+}
+function netHostPlatReset(){ NETW.platSpecs=[]; }
+function netHostPlatFlush(){ broadcast({t:'ev_plats',p:NETW.platSpecs}); }
+function netHostKill(e){
+  chargeSound(false,e);
+  scene.remove(e.aim); scene.remove(e.beam);
+  eGroup.remove(e.mesh);
+  const idx=enemies.indexOf(e); if(idx>=0) enemies.splice(idx,1);
+  kills++; score+=e.type.score;
+  if(depth>=17&&!infinityMode) echo+=e.type.score;
+  SFX.kill();
+  for(let i=0;i<14;i++){
+    const v=new THREE.Vector3(rnd(-4,4),rnd(1,6),rnd(-4,4));
+    spawnParticle(e.center,v,rnd(0.5,1.1),0.15,RED,true,1);
+  }
+  if(!infinityMode&&Math.random()<0.16) spawnPickup(e.center.x,e.center.z);
+  broadcast({t:'ev_kill',k:e.netKey});
+  updateHUD();
+}
+function netHostBeamVisual(e,end,thick,mode){
+  broadcast({t:'ev_beam',k:e.netKey,
+    ex:+end.x.toFixed(1),ey:+end.y.toFixed(1),ez:+end.z.toFixed(1),
+    th:thick,tank:mode==='tank',mg:mode==='mg'});
+}
+function netHostBeamDamage(e,dir,end,hitR,dmg){
+  const hitList=[];
+  const check=(px,py,pz,pid)=>{
+    const rp=new THREE.Vector3(px,py+1.1,pz);
+    const rel=new THREE.Vector3().subVectors(rp,e.center);
+    const proj=rel.dot(dir);
+    if(proj<=0) return;
+    const perp=rel.sub(dir.clone().multiplyScalar(proj)).length();
+    if(perp<hitR&&LOS(e.center.x,e.center.z,px,pz)){
+      if(pid===0) damagePlayer(dmg*(1+(depth-1)*0.04));
+      else hitList.push(pid);
+    }
+  };
+  check(player.pos.x,player.pos.y,player.pos.z,0);
+  for(const [id,p] of netPlayers){
+    if(performance.now()-p.ts>3000) continue;
+    check(p.x,p.y,p.z,id);
+  }
+  for(const id of hitList) send(id,{t:'ev_hurt',id,d:Math.round(dmg*(1+(depth-1)*0.04))});
+}
+function netHostMoonFire(aimX,aimZ,hitIds){
+  broadcast({t:'ev_moonfire',x:+aimX.toFixed(1),z:+aimZ.toFixed(1)});
+  for(const id of hitIds) send(id,{t:'ev_hurt',id,d:MOON_DMG});
+}
+function netAnnounceDeath(){
+  if(NET.role==='host') broadcast({t:'ev_death'});
+  else send(0,{t:'ev_death'});
+}
+function netAfterDeath(){
+  // соло-логика уже рестартует уровень; в сети гость просит хоста
+  if(NET.role==='guest'){
+    send(0,{t:'req_reset'});
+  } else if(NET.role==='host'){
+    // хост: рестарт уровня для себя, гости получат новый сид
+    NET.runSeed=(Math.random()*1e9)|0;
+    broadcast({t:'start',seed:NET.runSeed,mod});
+    buildLevel(depth); resetPlayer();
+  }
+}
+
+/* ---------- хост: гостевые выстрелы ---------- */
+function netGuestFire(fromId,m){
+  const p=netPlayerVec(fromId);
+  if(!p) return;
+  const o=p.clone().add(new THREE.Vector3(0,1.7,0));
+  const d=new THREE.Vector3(m.d.x,m.d.y,m.d.z).normalize();
+  const w=WEAPONS[m.w];
+  if(!w) return;
+  if(w.laser){
+    const wallD=castWall3D(o,d,200);
+    for(let i=enemies.length-1;i>=0;i--){
+      const e=enemies[i];
+      const t=raySphere(o,d,e.center,e.r+0.45);
+      if(t>0&&t<wallD) netHostKill(e);
+    }
+    return;
+  }
+  for(let i=0;i<(w.pellets||1);i++){
+    const dd=d.clone();
+    dd.x+=rnd(-w.spread,w.spread); dd.y+=rnd(-w.spread,w.spread); dd.z+=rnd(-w.spread,w.spread);
+    dd.normalize();
+    const wallD=castWall3D(o,dd,200);
+    let best=null,bt=wallD;
+    for(const e of enemies){
+      const t=raySphere(o,dd,e.center,e.r*1.05);
+      if(t>0&&t<bt){ bt=t; best=e; }
+    }
+    if(best){
+      best.hp-=w.dmg; best.flash=1;
+      if(best.hp<=0) netHostKill(best);
+    }
+  }
+}
+
+/* ---------- хост: ИИ с таргетингом на всех ---------- */
+function nearestTargetVec(e){
+  const cands=[{x:player.pos.x,y:player.pos.y,z:player.pos.z}];
+  for(const [id,p] of netPlayers){
+    if(performance.now()-p.ts>3000) continue;
+    cands.push({x:p.x,y:p.y,z:p.z});
+  }
+  let best=cands[0],bd=1e9;
+  for(const c of cands){
+    const d=Math.hypot(c.x-e.center.x,c.z-e.center.z);
+    if(d<bd){ bd=d; best=c; }
+  }
+  return best;
+}
+function netHostEnemiesTick(dt){
+  for(const e of enemies){
+    e.phase+=dt;
+    if(e.spawnT>0){ e.spawnT-=dt; e.mesh.scale.setScalar(clamp(1-e.spawnT/0.5,0.01,1)); }
+    e.flash=Math.max(0,e.flash-dt*5);
+    e.mesh.material.emissiveIntensity=3.4+NIGHT*0.45+e.flash*1.2;
+    const tgt=nearestTargetVec(e);
+    const tgtChest=new THREE.Vector3(tgt.x,tgt.y+1.1,tgt.z);
+    const dx=tgt.x-e.center.x, dz=tgt.z-e.center.z;
+    const dist=Math.hypot(dx,dz)||0.001;
+    const los=dist<60?LOS(e.center.x,e.center.z,tgt.x,tgt.z):false;
+    let mvx=0,mvz=0;
+    if(e.state==='hunt'){
+      e.atkT-=dt;
+      e.strafeT-=dt; if(e.strafeT<=0){ e.strafe*=-1; e.strafeT=rnd(1.5,3.5); }
+      const nx=dx/dist, nz=dz/dist;
+      if(dist>e.type.range){ mvx=nx; mvz=nz; }
+      else if(dist<e.type.range*0.5){ mvx=-nx; mvz=-nz; }
+      else { mvx=-nz*e.strafe; mvz=nx*e.strafe; }
+      if(e.atkT<=0&&los&&dist<27&&e.spawnT<=0){
+        e.state='charge'; e.chargeT=e.type.charge; e.loseT=0;
+        e.aimP=tgtChest.clone();
+        chargeSound(true,e,e.type.charge,e.type.cf0,e.type.cf1);
+        for(const [id,p] of netPlayers){
+          if(performance.now()-p.ts>3000) continue;
+          if(Math.hypot(p.x-e.center.x,p.z-e.center.z)<28)
+            send(id,{t:'ev_whisper',x:+e.center.x.toFixed(1),z:+e.center.z.toFixed(1)});
+        }
+      }
+    } else if(e.state==='charge'){
+      e.aimP.lerp(tgtChest,1-Math.exp(-4.5*dt));
+      e.chargeT-=dt;
+      if(!los){ e.loseT+=dt; if(e.loseT>0.25){ e.state='hunt'; e.atkT=0.7; chargeSound(false,e); e.aim.visible=false; } }
+      else e.loseT=0;
+      e.aim.visible=los;
+      if(los) orientCyl(e.aim,e.center,e.aimP);
+      if(e.chargeT<=0&&e.state==='charge'){
+        chargeSound(false,e); e.aim.visible=false;
+        if(e.type.burst){ e.state='burst'; e.burstLeft=e.type.burst; e.burstT=0.05; }
+        else {
+          e.state='hunt'; e.atkT=e.type.fireInt*rnd(0.85,1.3);
+          enemyBeam(e,e.aimP,e.type.dmg,e.type.deep?2.2:1,0.12,e.type.deep?'tank':null);
+        }
+      }
+      mvx=dx/dist*0.15; mvz=dz/dist*0.15;
+    } else if(e.state==='burst'){
+      e.aimP.lerp(tgtChest,1-Math.exp(-1.6*dt));
+      if(!los){ e.state='hunt'; e.atkT=0.6; }
+      else{
+        e.burstT-=dt;
+        if(e.burstT<=0&&e.burstLeft>0){
+          e.burstLeft--; e.burstT=e.type.burstGap;
+          const t=e.aimP.clone(), sp=0.5;
+          t.x+=rnd(-sp,sp); t.y+=rnd(-sp*0.4,sp*0.4); t.z+=rnd(-sp,sp);
+          enemyBeam(e,t,e.type.dmg,0.5,0.07,'mg');
+          if(e.burstLeft<=0){ e.state='hunt'; e.atkT=e.type.fireInt*rnd(0.85,1.2); }
+        }
+      }
+      const nx=dx/dist,nz=dz/dist;
+      mvx=-nz*e.strafe*0.45; mvz=nx*e.strafe*0.45;
+    }
+    if(e.beamT>0){ e.beamT-=dt; if(e.beamT<=0) e.beam.visible=false; }
+    const sp=e.type.speed*(e.state==='charge'?0.3:e.state==='burst'?0.5:1);
+    moveMC(e.center,mvx*sp*dt,mvz*sp*dt,e.r*0.8);
+    for(const o of enemies){ if(o===e) continue;
+      const ox=e.center.x-o.center.x, oz=e.center.z-o.center.z;
+      const d2=ox*ox+oz*oz, rr=(e.r+o.r)*0.9;
+      if(d2>0.001&&d2<rr*rr){ const d=Math.sqrt(d2),push=(rr-d)*0.5;
+        e.center.x+=ox/d*push*dt*8; e.center.z+=oz/d*push*dt*8; }
+    }
+    e.center.y=e.flyY+Math.sin(e.phase*1.4)*0.25;
+    e.mesh.position.copy(e.center);
+    e.mesh.rotation.y+=e.spin*dt;
+    e.mesh.rotation.x=Math.sin(e.phase*0.7)*0.15;
+  }
+  // сетка стен: рассылаем диффы
+  netHostFullWall();
+}
+
+/* ---------- гость: враги и луна ---------- */
+const GUEST_EMAP={0:'TETRA',1:'OCTA',2:'CUBE',3:'ICO',4:'MGUN'};
+function netSpawnGuestEnemy(a){
+  const t=ETYPES[GUEST_EMAP[a[5]]||'TETRA'];
+  const mat=new THREE.MeshLambertMaterial({color:0x1c0503,emissive:RED,emissiveIntensity:3.4});
+  const mesh=new THREE.Mesh(t.geo,mat);
+  mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(t.geo),
+    new THREE.LineBasicMaterial({color:0x0d0b09})));
+  const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,1,6),
+    new THREE.MeshBasicMaterial({color:glow(0xff2b17,3),fog:false}));
+  beam.visible=false; scene.add(beam);
+  eGroup.add(mesh);
+  const e={type:t,mesh,aim:null,beam,center:new THREE.Vector3(a[1],a[2],a[3]),
+    hp:1,maxHp:1,hpFrac:a[6],r:t.r,netKey:a[0],netGuest:true,
+    state:'hunt',beamT:0,buf:[],spin:rnd(0.6,1.6),phase:rnd(0,9),spawnT:0};
+  mesh.position.copy(e.center);
+  enemies.push(e);
+  return e;
+}
+function netGuestEnemiesTick(dt){
+  for(const e of enemies){
+    if(!e.netGuest) continue;
+    if(!e.buf||!e.buf.length) continue;
+    const rt=performance.now()/1000-0.12;
+    let a=e.buf[0],z2=e.buf[e.buf.length-1];
+    for(let i=0;i<e.buf.length-1;i++) if(e.buf[i].t<=rt&&e.buf[i+1].t>=rt){ a=e.buf[i]; z2=e.buf[i+1]; break; }
+    const span=Math.max(0.001,z2.t-a.t);
+    const k=clamp((rt-a.t)/span,0,1);
+    e.center.set(a.x+(z2.x-a.x)*k, a.y+(z2.y-a.y)*k, a.z+(z2.z-a.z)*k);
+    e.mesh.position.copy(e.center);
+    e.mesh.rotation.y=a.ry+(z2.ry-a.ry)*k;
+    e.phase+=dt*0.7;
+    e.mesh.rotation.x=Math.sin(e.phase)*0.15;
+    e.mesh.material.emissiveIntensity=3.4+NIGHT*0.45+(e.hpFrac<0.4?0.8:0);
+    if(e.beamT>0){ e.beamT-=dt; if(e.beamT<=0) e.beam.visible=false; }
+  }
+}
+function netGuestMoonTick(dt){
+  const ms=moonState; if(!ms) return;
+  ms.orbitA+=dt*0.05;
+  ms.pos.set(ms.cx+Math.cos(ms.orbitA)*90,100,ms.cz+Math.sin(ms.orbitA)*90);
+  ms.disc.position.copy(ms.pos); ms.disc.quaternion.copy(camera.quaternion);
+  ms.halo.position.copy(ms.pos); ms.halo.quaternion.copy(camera.quaternion);
+  ms.halo.rotation.z+=dt*0.4;
+  if(ms.state==='tele'){
+    ms.ring.material.opacity=0.35+0.45*Math.abs(Math.sin(gameT*14));
+    ms.line.material.opacity=0.2+0.3*Math.abs(Math.sin(gameT*16));
+  } else if(ms.state==='fire'&&ms.fireT>0){
+    ms.fireT-=dt;
+    ms.beam.material.opacity=Math.max(0.15,ms.fireT/0.4);
+    if(ms.fireT<=0){ ms.beam.visible=false; ms.state='idle'; }
+  }
+}
+function netGuestApplySnap(m){
+  if(m.d!==depth) return;
+  for(const a of m.en){
+    let e=null;
+    for(const en of enemies) if(en.netKey===a[0]){ e=en; break; }
+    if(!e) e=netSpawnGuestEnemy(a);
+    e.snapSeq=NETW.seq;
+    e.buf=e.buf||[];
+    e.buf.push({t:performance.now()/1000,x:a[1],y:a[2],z:a[3],ry:a[4]});
+    if(e.buf.length>4) e.buf.shift();
+    e.hpFrac=a[6];
+  }
+  for(let i=enemies.length-1;i>=0;i--){
+    if(enemies[i].netGuest&&enemies[i].snapSeq!==NETW.seq){
+      const e=enemies[i];
+      for(let j=0;j<8;j++){
+        const v=new THREE.Vector3(rnd(-3,3),rnd(1,5),rnd(-3,3));
+        spawnParticle(e.center,v,rnd(0.3,0.7),0.13,RED,true,1);
+      }
+      SFX.kill();
+      if(e.aim) scene.remove(e.aim);
+      scene.remove(e.beam);
+      eGroup.remove(e.mesh);
+      enemies.splice(i,1);
+    }
+  }
+  if(infinityMode){
+    exitPos.set(m.ex,m.ey,m.ez);
+    if(levelGroup&&levelGroup.userData.beacon){
+      levelGroup.userData.beacon.position.set(m.ex,m.ey+45,m.ez);
+      levelGroup.userData.ring.position.set(m.ex,m.ey+0.1,m.ez);
+    }
+  }
+  if(m.mn&&moonState){
+    const ms=moonState;
+    ms.pos.set(m.mn[0],100,m.mn[1]);
+    if(m.mn[2]==='tele'){
+      ms.state='tele'; ms.teleT=m.mn[3]; ms.aim.set(m.mn[4],0,m.mn[5]);
+      ms.ring.visible=true; ms.line.visible=true;
+      ms.ring.position.set(ms.aim.x,0.1,ms.aim.z);
+      const pr=1-clamp(ms.teleT/MOON_TELE,0,1);
+      ms.ring.scale.setScalar(2.6*(1.15-0.4*pr));
+      orientCyl(ms.line,ms.pos,new THREE.Vector3(ms.aim.x,0.1,ms.aim.z));
+    }
+  }
+}
+function guestWallApply(ch){
+  if(!maze||!wallMesh) return;
+  const m4=new THREE.Matrix4();
+  for(const c of ch){
+    const x=c[0],z=c[1],s=c[2];
+    if(x<0||z<0||x>=maze.W||z>=maze.H) continue;
+    if(maze.grid[z][x]===s) continue;
+    maze.grid[z][x]=s;
+    const idx=NETW.wallIdx.get(x+'_'+z);
+    if(idx===undefined) continue;
+    if(s===0) m4.makeTranslation((x+0.5)*CS,-99,(z+0.5)*CS);
+    else m4.makeTranslation((x+0.5)*CS,WALL_H/2,(z+0.5)*CS);
+    wallMesh.setMatrixAt(idx,m4);
+    wallMesh.instanceMatrix.needsUpdate=true;
+  }
+}
+function guestPlatsApply(list){
+  if(!levelGroup) return;
+  for(const pm of NETW.platMeshes) levelGroup.remove(pm);
+  NETW.platMeshes=[]; platforms.length=0;
+  for(const p of list) addPlatform(p[0],p[1],p[2],p[3],p[4]);
+}
+function netGuestEvent(m){
+  switch(m.t){
+    case 'ev_beam':{
+      for(const e of enemies){
+        if(e.netKey===m.k&&e.beam){
+          orientCyl(e.beam,e.center,new THREE.Vector3(m.ex,m.ey,m.ez));
+          e.beam.scale.x=e.beam.scale.z=m.th||1;
+          e.beam.visible=true; e.beamT=0.12;
+          const dist=e.center.distanceTo(camera.position);
+          const vol=clamp(1-dist/45,0.12,0.38);
+          if(m.tank) SFX.zapTank(vol); else if(m.mg) SFX.mgun(vol); else SFX.zap(vol);
+          break;
+        }
+      }
+      break;
+    }
+    case 'ev_hurt': if(m.id===NET.myId) damagePlayer(m.d); break;
+    case 'ev_kill':{
+      for(let i=enemies.length-1;i>=0;i--){
+        if(enemies[i].netKey===m.k){
+          const e=enemies[i];
+          for(let j=0;j<14;j++){
+            const v=new THREE.Vector3(rnd(-4,4),rnd(1,6),rnd(-4,4));
+            spawnParticle(e.center,v,rnd(0.5,1.1),0.15,RED,true,1);
+          }
+          SFX.kill();
+          if(e.aim) scene.remove(e.aim);
+          scene.remove(e.beam);
+          eGroup.remove(e.mesh);
+          enemies.splice(i,1);
+        }
+      }
+      break;
+    }
+    case 'ev_moonfire':{
+      const ms=moonState;
+      if(ms){
+        ms.state='fire'; ms.fireT=0.4;
+        ms.ring.visible=false; ms.line.visible=false;
+        ms.beam.visible=true;
+        orientCyl(ms.beam,ms.pos,new THREE.Vector3(m.x,0,m.z));
+        ms.beam.scale.x=ms.beam.scale.z=1.3;
+        SFX.boom(); SFX.zap(0.5);
+        for(let i=0;i<20;i++){
+          const v=new THREE.Vector3(rnd(-7,7),rnd(1,9),rnd(-7,7));
+          spawnParticle(new THREE.Vector3(m.x,0.3,m.z),v,rnd(0.4,0.9),rnd(0.08,0.2),
+            Math.random()<0.5?RED:0xff5a3a,true,1);
+        }
+        boomLight.position.set(m.x,1.5,m.z); boomLight.intensity=6;
+        shake=Math.min(shake+0.7,1.3);
+      }
+      break;
+    }
+    case 'ev_wall': guestWallApply(m.ch); break;
+    case 'ev_plats': guestPlatsApply(m.p); break;
+    case 'ev_whisper': burstWhisper(m.x,m.z,true,0.2); break;
+    case 'ev_level':{
+      if(NET.role!=='guest') break;
+      state='transition';
+      if(m.loop) showLoopTransition(); else showTransition(m.d);
+      setTimeout(()=>{
+        if(state!=='transition') return;
+        infinityMode=false;
+        depth=m.d;
+        buildLevel(depth); resetPlayer();
+        if(platform==='mobile'||locked){ state='playing'; }
+        else { state='paused'; showPause(); }
+        document.getElementById('overlay').classList.add('hidden');
+      },1600);
+      break;
+    }
+    case 'ev_dawn':{
+      if(NET.role!=='guest') break;
+      if(m.inf){
+        state='transition';
+        showInfinityTransition();
+        setTimeout(()=>{
+          if(state!=='transition') return;
+          buildInfinityLevel(); resetPlayer();
+          if(platform==='mobile'||locked){ state='playing'; }
+          else { state='paused'; showPause(); }
+          document.getElementById('overlay').classList.add('hidden');
+        },1900);
+      } else showDawn();
+      break;
+    }
+    case 'ev_score': score=m.s; echo=m.e; kills=m.k; deaths=m.d; updateHUD(); break;
+  }
+}
+
+/* ---------- общий роутер ---------- */
+function onData(fromId,str){
+  let m; try{ m=JSON.parse(str); }catch(e){ return; }
+  if(!m||!m.t) return;
+  if(m.t==='snap'){ if(NET.role==='guest') netGuestApplySnap(m); return; }
+  if(m.t==='fire'&&NET.role==='host'){ netGuestFire(fromId,m); return; }
+  if(m.t==='req_plats'&&NET.role==='host'){ netHostPlatFlush(); return; }
+  if(m.t==='req_reset'&&NET.role==='host'){
+    NET.runSeed=(Math.random()*1e9)|0;
+    broadcast({t:'start',seed:NET.runSeed,mod});
+    buildLevel(depth); resetPlayer();
+    return;
+  }
+  if(m.t==='ev_death'){
+    deaths++; updateHUD();
+    if(NET.role==='host') broadcast(m,fromId);
+    return;
+  }
+  if(m.t==='start'&&NET.role==='guest'){
+    if(m.mod!==undefined) mod=m.mod;
+    netBegin(m.seed);
+    return;
+  }
+  if(m.t.slice(0,3)==='ev_'&&NET.role==='guest'){ netGuestEvent(m); return; }
+  baseData(fromId,str);
+}
+
+/* ---------- тик: позиции + призраки ---------- */
+let posT=0,last=performance.now();
+function tick(){
+  requestAnimationFrame(tick);
+  const now=performance.now(), dt=Math.min((now-last)/1000,0.05); last=now;
+  if(!NET.active||state!=='playing') return;
+  posT-=dt;
+  if(posT<=0){
+    posT=1/15;
+    const msg={t:'pos',x:+player.pos.x.toFixed(2),y:+player.pos.y.toFixed(2),
+      z:+player.pos.z.toFixed(2),yw:+player.yaw.toFixed(2),pt:+player.pitch.toFixed(2),n:NET.name};
+    if(NET.role==='host') broadcast(msg);
+    else send(0,msg);
+  }
+  const rt=now/1000-0.1;
+  for(const [id,gh] of NET.ghosts){
+    const b=gh.buf;
+    if(!b.length) continue;
+    let a=b[0],z=b[b.length-1];
+    for(let i=0;i<b.length-1;i++) if(b[i].t<=rt&&b[i+1].t>=rt){ a=b[i]; z=b[i+1]; break; }
+    const span=Math.max(0.001,z.t-a.t);
+    const k=clamp((rt-a.t)/span,0,1);
+    gh.group.position.set(a.x+(z.x-a.x)*k, a.y+(z.y-a.y)*k, a.z+(z.z-a.z)*k);
+    gh.group.rotation.y=gh.yaw+Math.PI;
+    gh.body.rotation.x+=dt*1.2;
+  }
+}
+requestAnimationFrame(tick);
+
+/* точка входа в лобби уже подключена в главном скрипте (data-net) */
+/* кнопка «в титул» из лобби */
+document.getElementById('overlay').addEventListener('click',e=>{
+  if(e.target.closest('.menu-link')&&!NET.active){
+    if(document.querySelector('.net-box')&&NET.role!==null){
+      NET.role=null;
+      NET.conns.forEach(c=>{try{c.pc.close();}catch(err){}});
+      NET.conns.clear();
+      NET.ghosts.forEach((_,id)=>dropGhost(id));
+      showIntro();
+    }
+  }
+});
+})();
+</script>
+
+<script>
+/* ============================================================
+   ГЛАВНЫЙ ЦИКЛ + перехватчики общих переходов (хост объявляет)
+   ============================================================ */
+
+/* хост: переход глубины объявляется гостям */
+const _showTransition=showTransition;
+showTransition=function(nextD){
+  if(NET.active&&NET.role==='host') broadcast({t:'ev_level',d:nextD,loop:false});
+  _showTransition(nextD);
+};
+const _showLoopTransition=showLoopTransition;
+showLoopTransition=function(){
+  if(NET.active&&NET.role==='host') broadcast({t:'ev_level',d:depth,loop:true});
+  _showLoopTransition();
+};
+const _showInfinityTransition=showInfinityTransition;
+showInfinityTransition=function(){
+  if(NET.active&&NET.role==='host') broadcast({t:'ev_dawn',inf:true});
+  _showInfinityTransition();
+};
+const _showDawn=showDawn;
+showDawn=function(){
+  if(NET.active&&NET.role==='host') broadcast({t:'ev_dawn',inf:false});
+  _showDawn();
+};
+const _showModSelect=showModSelect;
+showModSelect=function(){
+  if(NET.active&&NET.role==='guest'){
+    overlayShow(`<h1>ХОСТ <em>ВЫБИРАЕТ</em></h1>
+      <div class="quote">награда сна будет общей. жди…</div>`);
+    return;
+  }
+  _showModSelect();
+};
+const _startNewRun=startNewRun;
+startNewRun=function(){
+  if(NET.active&&NET.role==='host'){
+    NET.runSeed=(Math.random()*1e9)|0;
+    broadcast({t:'start',seed:NET.runSeed,mod});
+  }
+  _startNewRun();
+};
+
 const clock=new THREE.Clock();
 function loop(){
   requestAnimationFrame(loop);
@@ -2674,19 +3775,11 @@ function loop(){
 
   if(state==='playing'){
     gameT+=dt;
-        // сеть: хост рассылает снимки мира и синхронизирует счёт
-    if(NET.active&&NET.role==='host'){
-      netHostTick(dt);
-    }
-    // сеть: переход глубины у хоста объявляется гостям
-    if(NET.active&&NET.role==='host'){
-      if(depth>netLastDepthSent){
-        netLastDepthSent=depth;
-        broadcast({t:'ev_level',d:depth,loop:false});
-      }
-    }
 
-    // --- движение: клавиатура + сенсорный пад ---
+    // сеть: хост рассылает снимки мира
+    if(NET.active&&NET.role==='host') netHostTick(dt);
+
+    // --- движение ---
     let f=0,s=0;
     if(keys['KeyW']||keys['ArrowUp'])f++;
     if(keys['KeyS']||keys['ArrowDown'])f--;
@@ -2709,7 +3802,7 @@ function loop(){
     moveMC(player.pos,player.vel.x*dt,player.vel.z*dt,PLAYER_R);
     player.pos.y+=player.vel.y*dt;
 
-    // --- вертикаль: пол + фигуры-платформы (рассвет) ---
+    // вертикаль: пол + платформы рассвета
     let floorY=0;
     if(infinityMode){
       for(let i=0;i<platforms.length;i++){
@@ -2741,7 +3834,7 @@ function loop(){
         armor=Math.min(100,armor+ARMOR_REGEN*dt);
     }
 
-    // --- камера ---
+    // камера
     camera.position.set(player.pos.x,player.pos.y+EYE,player.pos.z);
     camera.rotation.set(player.pitch,player.yaw,0);
     if(shake>0.002){
@@ -2757,22 +3850,21 @@ function loop(){
       camera.updateProjectionMatrix();
     }
 
-    // --- фонарь ---
+    // фонарь
     if(playerLightBase>0){
       playerLight.intensity=playerLightBase*
         (0.93+0.05*Math.sin(gameT*6.1)+0.03*Math.sin(gameT*15.7));
     } else playerLight.intensity=0;
 
-    // --- автоогонь АК: удержание ЛКМ ---
+    // автоогонь АК / сенсорный огонь
     if(mouseHeld&&WEAPONS[curW].auto&&!infinityMode) tryFire();
-    // --- сенсорный огонь: удержание = автоогонь / луч ---
     if(platform==='mobile'&&touchUI.fireHeld){
       const fw=WEAPONS[curW];
       if(fw.laser){ if(!touchUI.fireBlocked) laserHeld=true; }
       else tryFire();
     }
 
-    // --- view-model ---
+    // view-model
     recoil*=Math.exp(-9*dt);
     if(switchT>0) switchT-=dt;
     const gm=gunModels[curW], st=gunState[curW];
@@ -2796,7 +3888,7 @@ function loop(){
     if(flashLight.intensity<0.02)flashLight.intensity=0;
     boomLight.intensity*=Math.exp(-8*dt);
 
-    // --- лазер игрока ---
+    // лазер игрока
     if(laserActiveNow){
       if(!laserOn){ laserOn=true; laserSound(true); laserBeam.visible=true; laserTickT=0; }
       laserTickT-=dt;
@@ -2804,8 +3896,8 @@ function loop(){
       if(laserOn) updateLaserBeam();
     } else if(laserOn){ laserOff(); }
 
-    // --- рассвет: толпа не редеет ---
-    if(infinityMode){
+    // рассвет: толпа не редеет (хост и соло)
+    if(infinityMode&&(!NET.active||NET.role==='host')){
       infSpawnT-=dt;
       if(enemies.length<INF_ENEMIES&&infSpawnT<=0){
         infSpawnT=0.9;
@@ -2826,10 +3918,9 @@ function loop(){
     // маяк
     if(levelGroup){
       const b=levelGroup.userData.beacon;
-      b.material.opacity=0.18+Math.sin(gameT*2.2)*0.07;
+      if(b){ b.material.opacity=0.18+Math.sin(gameT*2.2)*0.07; }
       const r=levelGroup.userData.ring;
-      r.scale.setScalar(1+Math.sin(gameT*2.2)*0.12);
-      r.rotation.z+=dt*0.8;
+      if(r){ r.scale.setScalar(1+Math.sin(gameT*2.2)*0.12); r.rotation.z+=dt*0.8; }
     }
     if(levelGroup) for(const o of levelGroup.children)
       if(o.userData.sky){ o.rotation.y+=o.userData.spin*dt; o.rotation.x+=o.userData.spin*0.4*dt; }
@@ -2839,7 +3930,7 @@ function loop(){
       dawnGlow.material.opacity=0.2+0.07*Math.sin(gameT*0.5+1);
     }
 
-    // --- выход: три судьбы луча ---
+    // выход
     const reached = Math.hypot(player.pos.x-exitPos.x,player.pos.z-exitPos.z)<1.6
       && Math.abs(player.pos.y-exitPos.y)<2.5;
     if(reached){
@@ -2897,9 +3988,7 @@ function loop(){
     updateDyson(dt);
   }
 
-  /* ---------- рендер в два прохода ----------
-     1) мир через композер: bloom → зерно сна → FXAA
-     2) depth очищается → оружие напрямую, поверх всего */
+  /* рендер в два прохода */
   composer.render();
   renderer.autoClear=false;
   renderer.clearDepth();
@@ -2930,447 +4019,6 @@ addEventListener('orientationchange',()=>setTimeout(()=>{
   composer.setSize(innerWidth,innerHeight);
   updateFXAA();
 },250));
-</script>
-  <script>
-/* ============================================================
-   БЕССОННИЦА · СЕТЬ — часть A: транспорт, лобби, призраки
-   хост-авторитарная звезда: 0=хост, 1..2=гости
-   ============================================================ */
-(function(){
-'use strict';
-
-/* ---------- ICE: STUN + публичный TURN (нужен при VPN с kill-switch,
-   симметричном NAT операторов и строгих фаерволах; для продакшна
-   поднимите свой coturn — реле видит только шифрованные байты) ---------- */
-const ICE={
-  iceServers:[
-    {urls:'stun:stun.l.google.com:19302'},
-    {urls:'stun:stun1.l.google.com:19302'},
-    {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
-    {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
-  ]
-};
-
-/* ---------- утилиты ---------- */
-const enc=s=>btoa(unescape(encodeURIComponent(s)));
-const dec=s=>decodeURIComponent(escape(atob(s.trim())));
-function waitIce(pc,ms){ // non-trickle: ждём сбора кандидатов (VPN собирает медленно)
-  return new Promise(res=>{
-    if(pc.iceGatheringState==='complete') return res();
-    let done=false;
-    const fin=()=>{ if(!done){done=true;pc.removeEventListener('icegatheringstatechange',chk);res();} };
-    const chk=()=>{ if(pc.iceGatheringState==='complete') fin(); };
-    pc.addEventListener('icegatheringstatechange',chk);
-    setTimeout(fin,ms||3500);
-  });
-}
-
-const NET={
-  active:false, role:null, myId:0, name:'', runSeed:0,
-  conns:new Map(),   // id -> {pc,dc,ping,rt,relay}
-  ghosts:new Map(),  // id -> {group,txt,buf,yaw,pitch,name}
-  log:[]
-};
-window.NET=NET;
-
-/* ---------- мини-стили лобби ---------- */
-const st=document.createElement('style');
-st.textContent=`
-.net-box{margin-top:20px;text-align:left}
-.net-name{width:100%;max-width:280px;font-family:'IBM Plex Mono',monospace;font-size:13px;
-  background:rgba(255,255,255,.55);border:1px solid rgba(20,18,15,.35);color:var(--ink);
-  padding:8px 10px;text-align:center}
-.net-ta{width:100%;height:58px;font-family:'IBM Plex Mono',monospace;font-size:9.5px;line-height:1.35;
-  background:rgba(255,255,255,.6);border:1px solid rgba(20,18,15,.3);color:var(--ink);
-  padding:7px;resize:none;box-sizing:border-box}
-.net-btn{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
-  padding:9px 14px;background:none;border:1px solid rgba(20,18,15,.45);color:var(--ink);
-  cursor:pointer;transition:all .13s}
-.net-btn:hover{background:var(--ink);color:var(--paper)}
-.net-btn.go{border-color:var(--red);color:var(--red)}
-.net-btn.go:hover{background:var(--red);color:#fff}
-.net-btn:disabled{opacity:.35;pointer-events:none}
-.net-slot{border:1px solid rgba(20,18,15,.28);padding:12px 14px;margin-top:10px;text-align:left}
-.net-slot .st-title{font-size:11px;letter-spacing:.22em;text-transform:uppercase;font-weight:700}
-.net-slot .st-row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
-.net-status{font-size:10px;letter-spacing:.18em;text-transform:uppercase}
-.net-status.on{color:#1d7a34;font-weight:700}
-.net-status.off{color:var(--red)}
-.net-status.wait{opacity:.55}
-.net-note{font-size:10px;letter-spacing:.14em;opacity:.6;margin-top:12px;text-align:center}
-.net-log{font-size:10px;text-align:left;margin-top:14px;opacity:.7;max-height:74px;overflow:hidden;line-height:1.6}
-.net-ping{font-size:11px;letter-spacing:.18em;margin-top:6px}
-`;
-document.head.appendChild(st);
-
-function say(msg){ NET.log.push(msg); if(NET.log.length>5) NET.log.shift(); }
-
-/* ---------- призраки: аватар дальнего игрока ---------- */
-const GHOST_COLORS=[0x2f7cff,0xe0b83c,0xe8e2d4];
-function makeGhost(id,name){
-  const col=GHOST_COLORS[id%3];
-  const g=new THREE.Group();
-  const body=new THREE.Mesh(new THREE.OctahedronGeometry(0.55),
-    new THREE.MeshLambertMaterial({color:0x14120f,emissive:col,emissiveIntensity:2.2}));
-  g.add(body);
-  g.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.OctahedronGeometry(0.55)),
-    new THREE.LineBasicMaterial({color:0x0d0b09})));
-  // имя над головой
-  const c=document.createElement('canvas'); c.width=256; c.height=64;
-  const x=c.getContext('2d');
-  x.font='700 30px "IBM Plex Mono",monospace'; x.textAlign='center';
-  x.fillStyle='#'+col.toString(16).padStart(6,'0');
-  x.fillText((name||'игрок '+id).slice(0,12),128,40);
-  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),fog:false}));
-  spr.scale.set(2.2,0.55,1); spr.position.y=1.15;
-  g.add(spr);
-  g.position.set(0,-99,0); // спрятан до первого пакета
-  scene.add(g);
-  return {group:g,body,buf:[],yaw:0,pitch:0,name:name||('игрок '+id)};
-}
-function dropGhost(id){
-  const gh=NET.ghosts.get(id);
-  if(gh){ scene.remove(gh.group); NET.ghosts.delete(id); }
-}
-function ghostPos(id,msg){
-  let gh=NET.ghosts.get(id);
-  if(!gh){ gh=makeGhost(id,msg.n||''); NET.ghosts.set(id,gh); }
-  gh.buf.push({t:performance.now()/1000,x:msg.x,y:msg.y,z:msg.z});
-  if(gh.buf.length>6) gh.buf.shift();
-  gh.yaw=msg.yw; gh.pitch=msg.pt;
-}
-
-/* ---------- сообщения ---------- */
-function send(id,obj){
-  const c=NET.conns.get(id);
-  if(c&&c.dc&&c.dc.readyState==='open'){ try{ c.dc.send(JSON.stringify(obj)); }catch(e){} }
-}
-function broadcast(obj,exceptId){
-  for(const [id,c] of NET.conns)
-    if(id!==exceptId&&c.dc&&c.dc.readyState==='open'){
-      try{ c.dc.send(JSON.stringify(obj)); }catch(e){}
-    }
-}
-function onData(fromId,str){
-  let m; try{ m=JSON.parse(str); }catch(e){ return; }
-  switch(m.t){
-    case 'hello': // гость представился
-      if(NET.role==='host'){
-        send(fromId,{t:'welcome',id:fromId,host:NET.name,seed:NET.runSeed});
-        say((m.n||'гость')+' вошёл в сон');
-      }
-      break;
-    case 'welcome':
-      NET.myId=m.id; NET.runSeed=m.seed;
-      say('хост принял: '+(m.host||''));
-      break;
-    case 'pos':
-      ghostPos(fromId,m);
-      if(NET.role==='host') broadcast(m,fromId); // звезда: хост ретранслирует гостям
-      break;
-    case 'ping':
-      send(fromId,{t:'pong',ts:m.ts});
-      break;
-    case 'pong':{
-      const c=NET.conns.get(fromId);
-      if(c) c.rtt=Math.round(performance.now()-m.ts);
-      break;
-    }
-    case 'start':
-      if(NET.role==='guest') netBegin(m.seed);
-      break;
-  }
-}
-
-/* ---------- WebRTC ---------- */
-function bindChannel(id,dc,pc){
-  NET.conns.set(id,{pc,dc,rtt:0});
-  dc.onmessage=e=>onData(id,e.data);
-  dc.onopen=()=>{
-    say('слот '+id+' на связи');
-    send(id,{t:'hello',n:NET.name,id:NET.myId});
-    refreshLobby();
-    // пинг каждые 2с
-    const c=NET.conns.get(id);
-    c.pingInt=setInterval(()=>{
-      if(dc.readyState==='open') send(id,{t:'ping',ts:performance.now()});
-      else clearInterval(c.pingInt);
-    },2000);
-  };
-  dc.onclose=()=>{ dropGhost(id); say('слот '+id+' отключился'); refreshLobby(); };
-  pc.onconnectionstatechange=()=>{
-    if(['failed','disconnected','closed'].includes(pc.connectionState)){
-      dropGhost(id); say('слот '+id+' потерян'); refreshLobby();
-    }
-  };
-}
-async function hostMakeOffer(){
-  const pc=new RTCPeerConnection(ICE);
-  const id=NET.conns.size+1; // слоты 1,2
-  const dc=pc.createDataChannel('insomnia',{ordered:true});
-  bindChannel(id,dc,pc);
-  await pc.setLocalDescription(await pc.createOffer());
-  await waitIce(pc);
-  return {id,offer:enc(JSON.stringify(pc.localDescription))};
-}
-async function hostTakeAnswer(id,answerStr){
-  const c=NET.conns.get(id);
-  if(!c) throw new Error('слот не создан');
-  await c.pc.setRemoteDescription(JSON.parse(dec(answerStr)));
-}
-async function guestMakeAnswer(offerStr){
-  const pc=new RTCPeerConnection(ICE);
-  pc.ondatachannel=e=>bindChannel(0,e.channel,pc); // 0 = хост
-  await pc.setRemoteDescription(JSON.parse(dec(offerStr)));
-  await pc.setLocalDescription(await pc.createAnswer());
-  await waitIce(pc);
-  return enc(JSON.stringify(pc.localDescription));
-}
-
-/* ---------- лобби ---------- */
-function netLobby(){
-  NET.role=null; NET.name='';
-  overlayShow(`
-    <h1>СОН <em>ВТРОЁМ</em></h1>
-    <div class="sub">прямое соединение · без серверов</div>
-    <div class="net-box" style="text-align:center">
-      <input class="net-name" id="net-name" maxlength="12" placeholder="твоё имя в сне">
-      <div class="st-row" style="justify-content:center;margin-top:14px">
-        <button class="net-btn go" id="net-host">я хост · создать сон</button>
-        <button class="net-btn" id="net-guest">я гость · войти по коду</button>
-      </div>
-      <div class="net-note">управление: <b id="net-plat-lab">клавиатура</b> ·
-        <button class="net-btn" id="net-plat" style="padding:4px 8px">сменить</button></div>
-    </div>
-    <div class="quote">хост создаёт код и отправляет друзьям в любой мессенджер<br>
-    друзья возвращают ответный код — и сон становится общим</div>
-    <div class="menu-link">[ назад к выбору платформы ]</div>`);
-  let plat='pc';
-  $('net-host').onclick=()=>{ NET.name=($('net-name').value||'хост').slice(0,12); hostLobby(); };
-  $('net-guest').onclick=()=>{ NET.name=($('net-name').value||'гость').slice(0,12); guestLobby(); };
-  $('net-plat').onclick=()=>{
-    plat=plat==='pc'?'mobile':'pc';
-    $('net-plat-lab').textContent=plat==='pc'?'клавиатура':'экран';
-    NET.ownPlat=plat;
-  };
-  NET.ownPlat='pc';
-}
-function hostLobby(){
-  NET.role='host'; NET.myId=0;
-  overlayShow(`
-    <h1>ХОСТ <em>СНА</em></h1>
-    <div class="sub">создай код для каждого из двух друзей</div>
-    <div class="net-box">
-      <div class="net-slot" id="net-slot1">
-        <div class="st-title">друг 1</div>
-        <div class="st-status off" id="net-ss1">не подключён</div>
-        <div class="st-row">
-          <button class="net-btn" id="net-mk1">создать код</button>
-          <textarea class="net-ta" id="net-off1" readonly placeholder="здесь появится код — отправь его первому другу"></textarea>
-          <button class="net-btn" id="net-cp1">копировать</button>
-        </div>
-        <div class="st-row">
-          <textarea class="net-ta" id="net-ans1" placeholder="вставь ответный код первого друга"></textarea>
-          <button class="net-btn go" id="net-ok1">подтвердить</button>
-        </div>
-      </div>
-      <div class="net-slot" id="net-slot2">
-        <div class="st-title">друг 2</div>
-        <div class="st-status off" id="net-ss2">не подключён</div>
-        <div class="st-row">
-          <button class="net-btn" id="net-mk2">создать код</button>
-          <textarea class="net-ta" id="net-off2" readonly placeholder="код для второго друга"></textarea>
-          <button class="net-btn" id="net-cp2">копировать</button>
-        </div>
-        <div class="st-row">
-          <textarea class="net-ta" id="net-ans2" placeholder="вставь ответный код второго друга"></textarea>
-          <button class="net-btn go" id="net-ok2">подтвердить</button>
-        </div>
-      </div>
-      <div class="st-row" style="justify-content:center;margin-top:16px">
-        <button class="net-btn go" id="net-start" disabled>начать общий сон</button>
-      </div>
-      <div class="net-ping" id="net-pings" style="text-align:center"></div>
-    </div>
-    <div class="quote">начать можно и вдвоём — второй слот оставь пустым</div>`);
-  for(const s of [1,2]){
-    $('net-mk'+s).onclick=async()=>{
-      try{
-        const {id,offer}=await hostMakeOffer();
-        if(id!==s){ /* слоты создаются по порядку */ }
-        $('net-off'+s).value=offer;
-      }catch(e){ $('net-off'+s).value='ошибка: '+e.message; }
-    };
-    $('net-cp'+s).onclick=()=>{
-      const ta=$('net-off'+s); ta.select();
-      try{ navigator.clipboard.writeText(ta.value); }catch(e){ document.execCommand('copy'); }
-    };
-    $('net-ok'+s).onclick=async()=>{
-      try{
-        await hostTakeAnswer(s,$('net-ans'+s).value);
-        $('net-ss'+s).textContent='устанавливается…'; $('net-ss'+s).className='net-status wait';
-      }catch(e){ $('net-ss'+s).textContent='код не принят'; $('net-ss'+s).className='net-status off'; }
-    };
-  }
-  $('net-start').onclick=()=>{
-    NET.runSeed=(Math.random()*1e9)|0;
-    broadcast({t:'start',seed:NET.runSeed});
-    netBegin(NET.runSeed);
-  };
-  refreshLobby();
-}
-function guestLobby(){
-  NET.role='guest';
-  overlayShow(`
-    <h1>ГОСТЬ <em>СНА</em></h1>
-    <div class="sub">вставь код от хоста — получишь ответный</div>
-    <div class="net-box">
-      <textarea class="net-ta" id="net-off-in" style="height:74px" placeholder="вставь код хоста сюда"></textarea>
-      <div class="st-row">
-        <button class="net-btn go" id="net-mk">создать ответный код</button>
-      </div>
-      <textarea class="net-ta" id="net-ans-out" readonly placeholder="здесь появится твой код — отправь его обратно хосту"></textarea>
-      <div class="st-row">
-        <button class="net-btn" id="net-cp">копировать</button>
-      </div>
-      <div class="net-status wait" id="net-ss">ожидание соединения…</div>
-      <div class="net-ping" id="net-pings"></div>
-    </div>
-    <div class="quote">когда хост подтвердит код — он появится в твоём сне.<br>начало игры объявит хост.</div>
-    <div class="menu-link">[ назад ]</div>`);
-  $('net-mk').onclick=async()=>{
-    try{
-      const ans=await guestMakeAnswer($('net-off-in').value);
-      $('net-ans-out').value=ans;
-      $('net-ss').textContent='код отправлен — жди начала'; $('net-ss').className='net-status wait';
-    }catch(e){
-      $('net-ss').textContent='код хоста не принят'; $('net-ss').className='net-status off';
-    }
-  };
-  $('net-cp').onclick=()=>{
-    const ta=$('net-ans-out'); ta.select();
-    try{ navigator.clipboard.writeText(ta.value); }catch(e){ document.execCommand('copy'); }
-  };
-}
-function refreshLobby(){
-  if(NET.role!=='host') return;
-  let online=0;
-  for(const s of [1,2]){
-    const c=NET.conns.get(s);
-    const el=document.getElementById('net-ss'+s);
-    if(!el) continue;
-    if(c&&c.dc&&c.dc.readyState==='open'){
-      el.textContent='на связи'; el.className='net-status on'; online++;
-    }
-  }
-  const start=document.getElementById('net-start');
-  if(start) start.disabled=(online<1);
-  const pings=document.getElementById('net-pings');
-  if(pings){
-    const rows=[];
-    for(const [id,c] of NET.conns)
-      if(c.dc&&c.dc.readyState==='open') rows.push(`друг ${id}: ${c.rtt||'…'} мс`);
-    pings.textContent=rows.join(' · ');
-  }
-}
-setInterval(refreshLobby,1500);
-
-/* ---------- старт общего сна ---------- */
-function netBegin(seed){
-  NET.runSeed=seed; NET.active=true;
-  const p=NET.ownPlat||'pc';
-  platform=p; initAudio();
-  document.body.classList.toggle('touch', p==='mobile');
-  if(p==='mobile'){
-    try{ renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); }catch(err){}
-  } else {
-    try{ renderer.setPixelRatio(Math.min(devicePixelRatio,2)); }catch(err){}
-  }
-  renderer.setSize(innerWidth,innerHeight);
-  composer.setPixelRatio(renderer.getPixelRatio());
-  composer.setSize(innerWidth,innerHeight);
-  updateFXAA();
-  if(p==='mobile'){
-    try{ document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(()=>{}); }catch(err){}
-    try{ screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape').catch(()=>{}); }catch(err){}
-  }
-  score=0; kills=0; deaths=0; echo=0; depth=1; infinityMode=false;
-  buildLevel(1); resetPlayer();
-  if(p==='pc'){
-    /* pointer lock требует клика: сообщение «start» приходит гостю
-       по сети без жеста пользователя. Врата = один клик → resumeGame()
-       → requestPointerLock → pendingState. Хосту тоже честно. */
-    state='paused';
-    overlayShow(`
-      <h1 style="font-size:34px">ОБЩИЙ СОН <em>НАЧАЛСЯ</em></h1>
-      <div class="quote">вы в одном лабиринте. фигуры видят вас всех.</div>
-      <div class="go">[ щёлкни, чтобы взять управление ]</div>`);
-    pendingState='playing';
-  } else {
-    startPlaying(); // тач: pointer lock не нужен
-  }
-  const hint=document.getElementById('hint');
-  hint.textContent='общий сон: '+(NET.role==='host'?'ты хост · ':'')+'вы в одном лабиринте';
-  hint.style.opacity=0.7;
-  setTimeout(()=>hint.style.opacity=0,6000);
-}
-
-/* ---------- тик: позиция 15 Гц + интерполяция призраков ---------- */
-let posT=0,last=performance.now();
-function tick(){
-  requestAnimationFrame(tick);
-  const now=performance.now(), dt=Math.min((now-last)/1000,0.05); last=now;
-  if(!NET.active||state!=='playing') return;
-  posT-=dt;
-  if(posT<=0){
-    posT=1/15;
-    const msg={t:'pos',x:+player.pos.x.toFixed(2),y:+player.pos.y.toFixed(2),
-      z:+player.pos.z.toFixed(2),yw:+player.yaw.toFixed(2),pt:+player.pitch.toFixed(2),n:NET.name};
-    if(NET.role==='host') broadcast(msg);
-    else send(0,msg);
-  }
-  // призраки: буфер из 2 точек, лерп с задержкой 100 мс
-  const rt=now/1000-0.1;
-  for(const [id,gh] of NET.ghosts){
-    const b=gh.buf;
-    if(!b.length) continue;
-    let a=b[0],z=b[b.length-1];
-    for(let i=0;i<b.length-1;i++) if(b[i].t<=rt&&b[i+1].t>=rt){ a=b[i]; z=b[i+1]; break; }
-    const span=Math.max(0.001,z.t-a.t);
-    const k=clamp((rt-a.t)/span,0,1);
-    gh.group.position.set(a.x+(z.x-a.x)*k, a.y+(z.y-a.y)*k, a.z+(z.z-a.z)*k);
-    gh.group.rotation.y=gh.yaw+Math.PI; // октаген «смотрит» куда игрок
-    gh.body.rotation.x+=dt*1.2;         // мягкое вращение, как у врагов
-  }
-}
-requestAnimationFrame(tick);
-
-/* ---------- точка входа: кнопка «ВТРОЁМ» на титуле ---------- */
-document.getElementById('overlay').addEventListener('click',e=>{
-  const btn=e.target.closest('[data-net]');
-  if(btn&&btn.dataset.net==='lobby'&&state==='menu'){ netLobby(); return; }
-  if(e.target.closest('.menu-link')&&NET.role!==null&&!NET.active){
-    // назад из лобби (не из игры)
-    if(!document.querySelector('.net-box')) return;
-    NET.role=null; NET.conns.forEach(c=>{try{c.pc.close();}catch(err){}});
-    NET.conns.clear(); NET.ghosts.forEach((_,id)=>dropGhost(id));
-    showIntro();
-  }
-});
-/* пауза в общем сне: без выхода в титул (оборвёт сессию) */
-const _origShowPause=showPause;
-showPause=function(){
-  if(NET.active){
-    levelSelectOpen=false; shiftSeq=0;
-    overlayShow(`<h1>ПАУЗА</h1><div class="sub">общий сон ждёт</div>
-      <div class="quote">сон не остановить — фигуры продолжают охотиться.</div>
-      <div class="go">[ ${tapWord()}, чтобы вернуться ]</div>`);
-    document.body.classList.remove('playing');
-    return;
-  }
-  _origShowPause();
-};
-})();
 </script>
 </body>
 </html>
