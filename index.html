@@ -3715,6 +3715,27 @@ document.getElementById('overlay').addEventListener('click',e=>{
     }
   }
 });
+/* экспорт: главный скрипт зовёт эти функции напрямую */
+window.netLobby=netLobby;
+window.send=send;
+window.broadcast=broadcast;
+window.netPlayers=netPlayers;
+window.netAfterDeath=netAfterDeath;
+window.netAnnounceDeath=netAnnounceDeath;
+window.netGuestBuild=netGuestBuild;
+window.netGuestInfinity=netGuestInfinity;
+window.netHostTick=netHostTick;
+window.netHostFullWall=netHostFullWall;
+window.netHostPlat=netHostPlat;
+window.netHostPlatReset=netHostPlatReset;
+window.netHostPlatFlush=netHostPlatFlush;
+window.netHostKill=netHostKill;
+window.netHostBeamVisual=netHostBeamVisual;
+window.netHostBeamDamage=netHostBeamDamage;
+window.netHostMoonFire=netHostMoonFire;
+window.netHostEnemiesTick=netHostEnemiesTick;
+window.netGuestEnemiesTick=netGuestEnemiesTick;
+window.netGuestMoonTick=netGuestMoonTick;
 })();
 </script>
 
@@ -3933,7 +3954,7 @@ function loop(){
     // выход
     const reached = Math.hypot(player.pos.x-exitPos.x,player.pos.z-exitPos.z)<1.6
       && Math.abs(player.pos.y-exitPos.y)<2.5;
-    if(reached){
+      if(reached && !(NET.active&&NET.role==='guest')){
       if(infinityMode){
         SFX.portal();
         showDawn();
