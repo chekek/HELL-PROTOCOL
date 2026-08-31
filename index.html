@@ -3924,6 +3924,7 @@ window.netGuestMoonTick=netGuestMoonTick;
    ============================================================ */
 
 /* хост: переход глубины объявляется гостям */
+/* хост: общие события объявляет только он */
 const _showTransition=showTransition;
 showTransition=function(nextD){
   if(NET.active&&NET.role==='host') broadcast({t:'ev_level',d:nextD,loop:false});
