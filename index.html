@@ -2138,10 +2138,10 @@ function die(){
 
 // ---------- оружие ----------
 const WEAPONS=[
-  {name:'Револьвер',  mag:6,dmg:26,pellets:1,rate:0.45,reload:2.0,spread:0.006,kick:0.014,rocket:false},
-  {name:'Двухстволка',mag:2,dmg:12,pellets:8,rate:0.5, reload:2.3,spread:0.075,kick:0.05, rocket:false},
-  {name:'Ракетница',  mag:4,dmg:120,pellets:1,rate:0.9, reload:2.8,spread:0.003,kick:0.035,rocket:true},
-  {name:'Лазер',      mag:0,dmg:0, pellets:0,rate:0.16,reload:0,  spread:0,    kick:0.006,laser:true},
+  {name:'Револьвер «Глубина»',  mag:6,dmg:26,pellets:1,rate:0.45,reload:2.0,spread:0.006,kick:0.014,rocket:false},
+  {name:'Двухстволка «Глубина»',mag:2,dmg:12,pellets:8,rate:0.5, reload:2.3,spread:0.075,kick:0.05, rocket:false},
+  {name:'Ракетница «Буря»',  mag:4,dmg:120,pellets:1,rate:0.9, reload:2.8,spread:0.003,kick:0.035,rocket:true},
+  {name:'Лазер «Гидра»',      mag:0,dmg:0, pellets:0,rate:0.16,reload:0,  spread:0,    kick:0.006,laser:true},
   {name:'АК-47',      mag:30,dmg:13,pellets:1,rate:0.105,reload:2.4,spread:0.018,kick:0.006,auto:true},
 ];
 const gunState=WEAPONS.map((w,i)=>({w:i,ammo:w.mag,reloading:0}));
@@ -2159,17 +2159,192 @@ function cyl(r,h,mat,seg){ const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r
 
 function buildRevolver(){
   const g=new THREE.Group();
-  const f=box(0.07,0.13,0.36,M_DARK); f.position.set(0,0.02,-0.12); g.add(f);
-  const b=cyl(0.034,0.36,M_DARK); b.position.set(0,0.045,-0.44); g.add(b);
+  const M_STEEL=vmMat(0x3a3a3e), M_LEATHER=vmMat(0x4a3423), M_LEATHER_D=vmMat(0x322216);
+  // рама (тёмно-серая)
+  const frame=box(0.07,0.15,0.34,M_DARK); frame.position.set(0,0.02,-0.10); g.add(frame);
+  // негорючий ствол: труба + верхняя планка + стержень экстрактора
+  const barrel=cyl(0.032,0.44,M_DARK); barrel.position.set(0,0.05,-0.46); g.add(barrel);
+  const rib=box(0.026,0.02,0.44,M_STEEL); rib.position.set(0,0.092,-0.46); g.add(rib);
+  const ejector=cyl(0.011,0.36,M_STEEL); ejector.position.set(0,-0.008,-0.44); g.add(ejector);
+  const ejTip=new THREE.Mesh(new THREE.SphereGeometry(0.014,8,6),M_LIGHT);
+  ejTip.position.set(0,-0.008,-0.63); g.add(ejTip);
+  // серебряный барабан: 6 камор + рифлёные обода
   const drum=new THREE.Group();
-  const dc=cyl(0.075,0.17,M_LIGHT); drum.add(dc);
-  for(let i=0;i<6;i++){ const hole=cyl(0.018,0.19,M_DARK);
-    const a=i/6*Math.PI*2; hole.position.set(Math.cos(a)*0.045,Math.sin(a)*0.045,0); drum.add(hole); }
+  const dc=cyl(0.078,0.17,M_LIGHT); drum.add(dc);
+  for(let i=0;i<6;i++){
+    const hole=cyl(0.017,0.19,M_DARK);
+    const a=i/6*Math.PI*2;
+    hole.position.set(Math.cos(a)*0.047,Math.sin(a)*0.047,0);
+    drum.add(hole);
+  }
+  const rA=new THREE.Mesh(new THREE.TorusGeometry(0.076,0.007,6,24),M_DARK);
+  rA.position.z=-0.062; drum.add(rA);
+  const rB=rA.clone(); rB.position.z=0.062; drum.add(rB);
   drum.position.set(0,0.01,-0.12); g.add(drum); g.userData.drum=drum;
-  const grip=box(0.06,0.22,0.11,M_WOOD); grip.position.set(0,-0.14,0.03); grip.rotation.x=0.32; g.add(grip);
-  const sight=box(0.012,0.035,0.03,M_RED); sight.position.set(0,0.095,-0.58); g.add(sight);
-  g.userData.muzzle=new THREE.Vector3(0,0.045,-0.64);
+  // курок
+  const hammer=box(0.02,0.07,0.025,M_STEEL); hammer.position.set(0,0.105,0.05);
+  hammer.rotation.x=-0.45; g.add(hammer);
+  // спуск + скоба
+  const trig=box(0.015,0.05,0.02,M_STEEL); trig.position.set(0,-0.06,-0.05);
+  trig.rotation.x=0.25; g.add(trig);
+  const g1=box(0.012,0.055,0.012,M_DARK); g1.position.set(0,-0.075,-0.10); g.add(g1);
+  const g2=box(0.012,0.055,0.012,M_DARK); g2.position.set(0,-0.075,0.005); g.add(g2);
+  const g3=box(0.012,0.012,0.115,M_DARK); g3.position.set(0,-0.10,-0.048); g.add(g3);
+  // кожаная рукоять с полосами обмотки
+  const grip=box(0.062,0.22,0.11,M_LEATHER); grip.position.set(0,-0.13,0.05);
+  grip.rotation.x=0.32; g.add(grip);
+  for(let i=0;i<3;i++){
+    const wrap=box(0.068,0.013,0.118,M_LEATHER_D);
+    wrap.position.set(0,-0.05+i*0.05,0);
+    grip.add(wrap);
+  }
+  // прицел с лазером: колодка + красная линза + короткий луч
+  const sBase=box(0.032,0.026,0.06,M_DARK); sBase.position.set(0,0.115,-0.56); g.add(sBase);
+  const lens=box(0.012,0.012,0.012,vmMat(0x300604,0xff2b17));
+  lens.position.set(0,0.115,-0.592); g.add(lens);
+  const lb=cyl(0.0016,0.06,vmMat(0x300604,0xff2b17));
+  lb.position.set(0,0.115,-0.63); g.add(lb);
+  g.userData.muzzle=new THREE.Vector3(0,0.05,-0.69);
   g.userData.bobAmp=0.014;
+  return g;
+}
+function buildShotgun(){
+  const g=new THREE.Group();
+  const M_STEEL=vmMat(0x3a3a3e), M_WOOD_D=vmMat(0x3a2c1e);
+  // стволы + планка + дульные кольца
+  const b1=cyl(0.037,0.95,M_DARK), b2=cyl(0.037,0.95,M_DARK);
+  b1.position.set(-0.046,0.03,-0.42); b2.position.set(0.046,0.03,-0.42);
+  g.add(b1,b2);
+  const rib=box(0.012,0.014,0.92,M_STEEL); rib.position.set(0,0.078,-0.42); g.add(rib);
+  for(const sx of [-0.046,0.046]){
+    const muzz=new THREE.Mesh(new THREE.TorusGeometry(0.036,0.006,6,16),M_LIGHT);
+    muzz.position.set(sx,0.03,-0.89);
+    g.add(muzz);
+  }
+  // цевьё с насечками
+  const fore=box(0.116,0.078,0.44,M_WOOD); fore.position.set(0,-0.038,-0.36); g.add(fore);
+  for(let i=0;i<4;i++){
+    const n=box(0.12,0.006,0.018,M_WOOD_D);
+    n.position.set(0,-0.076,-0.2-i*0.05);
+    g.add(n);
+  }
+  // рама + затворный механизм (верхний ключ)
+  const recv=box(0.132,0.14,0.26,M_DARK); recv.position.set(0,0.005,0.05); g.add(recv);
+  const lever=box(0.05,0.018,0.1,M_STEEL); lever.position.set(0,0.086,0.03); g.add(lever);
+  const knob=box(0.05,0.03,0.028,M_LIGHT); knob.position.set(0,0.092,0.09); g.add(knob);
+  const bolt=new THREE.Mesh(new THREE.SphereGeometry(0.012,8,6),M_LIGHT);
+  bolt.position.set(0.068,0.01,-0.02); g.add(bolt);
+  const bolt2=bolt.clone(); bolt2.position.set(-0.068,0.01,-0.02); g.add(bolt2);
+  // шейка + приклад + затыльник
+  const wrist=box(0.06,0.1,0.16,M_WOOD); wrist.position.set(0,-0.045,0.18);
+  wrist.rotation.x=-0.25; g.add(wrist);
+  const stock=box(0.086,0.16,0.3,M_WOOD); stock.position.set(0,-0.075,0.33);
+  stock.rotation.x=-0.3; g.add(stock);
+  const pad=box(0.092,0.17,0.02,vmMat(0x1e1a15)); pad.position.set(0,-0.12,0.475);
+  pad.rotation.x=-0.3; g.add(pad);
+  // спуск + скоба
+  const trig=box(0.015,0.05,0.018,M_STEEL); trig.position.set(0,-0.055,0.02);
+  trig.rotation.x=0.2; g.add(trig);
+  const q1=box(0.012,0.05,0.012,M_DARK); q1.position.set(0,-0.07,-0.03); g.add(q1);
+  const q2=box(0.012,0.05,0.012,M_DARK); q2.position.set(0,-0.07,0.07); g.add(q2);
+  const q3=box(0.012,0.012,0.1,M_DARK); q3.position.set(0,-0.093,0.02); g.add(q3);
+  // мушка с красной точкой
+  const fs=box(0.014,0.034,0.02,M_STEEL); fs.position.set(0,0.1,-0.86); g.add(fs);
+  const dot=box(0.011,0.011,0.012,vmMat(0x300604,0xff2b17));
+  dot.position.set(0,0.117,-0.86); g.add(dot);
+  g.userData.muzzle=new THREE.Vector3(0,0.03,-0.92);
+  g.userData.bobAmp=0.02;
+  return g;
+}
+function buildRocket(){
+  const g=new THREE.Group();
+  const M_STEEL=vmMat(0x9aa0a6), M_STEEL_D=vmMat(0x3a3a3e);
+  // 4 ствола 2×2, нержавейка
+  const tubes=[];
+  for(const dy of [0.101,-0.011]) for(const dx of [-0.056,0.056]){
+    const t=cyl(0.05,0.7,M_STEEL);
+    t.position.set(dx,dy,-0.32);
+    g.add(t);
+    tubes.push({dx,dy});
+  }
+  // сопла сзади
+  for(const p of tubes){
+    const noz=cyl(0.056,0.06,vmMat(0x1e1a15));
+    noz.position.set(p.dx,p.dy,0.02);
+    g.add(noz);
+  }
+  // передние кольца + красная маркировка
+  for(const p of tubes){
+    const ringL=new THREE.Mesh(new THREE.TorusGeometry(0.05,0.007,6,18),M_STEEL_D);
+    ringL.position.set(p.dx,p.dy,-0.65); g.add(ringL);
+    const ringR=new THREE.Mesh(new THREE.TorusGeometry(0.05,0.009,6,18),M_RED);
+    ringR.position.set(p.dx,p.dy,-0.5); g.add(ringR);
+  }
+  // кончики ракет в стволах — гаснут по мере расхода
+  const tips=[];
+  for(const p of tubes){
+    const nose=new THREE.Mesh(new THREE.ConeGeometry(0.036,0.14,10),vmMat(0x8a1207,0xe02414));
+    nose.rotation.x=-Math.PI/2;
+    nose.position.set(p.dx,p.dy,-0.72);
+    g.add(nose);
+    tips.push(nose);
+  }
+  g.userData.tips=tips;
+  // корпус: боковые рельсы + верхняя плита + казённый блок
+  const railL=box(0.024,0.24,0.56,M_DARK); railL.position.set(-0.118,0.045,-0.3); g.add(railL);
+  const railR=railL.clone(); railR.position.x=0.118; g.add(railR);
+  const top=box(0.26,0.03,0.46,M_DARK); top.position.set(0,0.163,-0.28); g.add(top);
+  const back=box(0.26,0.26,0.16,M_DARK); back.position.set(0,0.045,0.1); g.add(back);
+  // оптический прицел: труба + кронштейны + синеватая линза
+  const scope=cyl(0.03,0.2,M_DARK); scope.position.set(0,0.22,-0.2); g.add(scope);
+  const objRing=new THREE.Mesh(new THREE.TorusGeometry(0.034,0.008,6,18),M_STEEL_D);
+  objRing.position.set(0,0.22,-0.3); g.add(objRing);
+  const m1=box(0.03,0.05,0.04,M_DARK); m1.position.set(0,0.185,-0.12); g.add(m1);
+  const m2=box(0.03,0.05,0.04,M_DARK); m2.position.set(0,0.185,-0.26); g.add(m2);
+  const lens=new THREE.Mesh(new THREE.CircleGeometry(0.024,16),vmMat(0x0b1e4d,0x2f7cff));
+  lens.position.set(0,0.22,-0.099); g.add(lens);
+  // рукоятка + телескопический приклад
+  const grip=box(0.06,0.16,0.1,M_WOOD); grip.position.set(0,-0.11,0.06);
+  grip.rotation.x=0.3; g.add(grip);
+  const rod1=cyl(0.014,0.26,M_STEEL_D); rod1.position.set(-0.07,0.06,0.3); g.add(rod1);
+  const rod2=cyl(0.014,0.26,M_STEEL_D); rod2.position.set(0.07,0.06,0.3); g.add(rod2);
+  const plate=box(0.2,0.14,0.03,vmMat(0x1e1a15)); plate.position.set(0,0.03,0.44); g.add(plate);
+  g.userData.muzzle=new THREE.Vector3(0,0.045,-0.8);
+  g.userData.bobAmp=0.017;
+  return g;
+}
+function buildLaser(){
+  const g=new THREE.Group();
+  const M_STEEL_D=vmMat(0x3a3a3e);
+  const M_BLUE=vmMat(0x123a9e,0x2f7cff);   // синее свечение «Гидры»
+  const M_COIL=vmMat(0x8a1207,0xe02414);    // красные катушки
+  // корпус + рёбра охлаждения
+  const body=box(0.11,0.15,0.5,M_DARK); body.position.set(0,0.03,-0.18); g.add(body);
+  for(let i=0;i<3;i++){
+    const fin=box(0.128,0.11,0.014,M_STEEL_D);
+    fin.position.set(0,0.03,-0.02-i*0.11);
+    g.add(fin);
+  }
+  // гипер-витой резонатор: труба + 5 красных катушек
+  const core=cyl(0.052,0.46,M_STEEL_D); core.position.set(0,0.055,-0.44); g.add(core);
+  for(let i=0;i<5;i++){
+    const coil=new THREE.Mesh(new THREE.TorusGeometry(0.066,0.016,8,20),M_COIL);
+    coil.position.set(0,0.055,-0.27-i*0.085);
+    g.add(coil);
+  }
+  // излучатель постоянного потока: муфта + синяя линза
+  const em=box(0.09,0.1,0.1,M_DARK); em.position.set(0,0.055,-0.71); g.add(em);
+  const lens=cyl(0.034,0.03,M_BLUE); lens.position.set(0,0.055,-0.745); g.add(lens);
+  // порт питания бесконечного запаса: разъём с синим ядром
+  const port=box(0.06,0.06,0.05,M_DARK); port.position.set(0,0.14,0.06); g.add(port);
+  const portCore=box(0.032,0.032,0.02,M_BLUE); portCore.position.set(0,0.14,0.09); g.add(portCore);
+  // рукоять + спуск
+  const grip=box(0.06,0.18,0.11,M_WOOD); grip.position.set(0,-0.12,0.02);
+  grip.rotation.x=0.28; g.add(grip);
+  const trig=box(0.015,0.045,0.018,M_STEEL_D); trig.position.set(0,-0.05,-0.04);
+  trig.rotation.x=0.2; g.add(trig);
+  g.userData.muzzle=new THREE.Vector3(0,0.055,-0.76);
+  g.userData.bobAmp=0.015;
   return g;
 }
 function buildShotgun(){
@@ -2251,7 +2426,7 @@ flashLight.position.set(0.42,-0.3,-1.4); camera.add(flashLight);
 const boomLight=new THREE.PointLight(0xff7038,0,30); scene.add(boomLight);
 
 const laserBeam=new THREE.Mesh(new THREE.CylinderGeometry(1,1,1,8),
-  new THREE.MeshBasicMaterial({color:glow(0xff2b17,3),transparent:true,opacity:0.8,fog:false,
+  new THREE.MeshBasicMaterial({color:glow(0x2f7cff,3)),transparent:true,opacity:0.8,fog:false,
     blending:THREE.AdditiveBlending,depthWrite:false}));
 laserBeam.visible=false;
 scene.add(laserBeam);
@@ -2367,7 +2542,7 @@ function fireLaserTick(){
       if(t>0&&t<wallD){ killEnemy(e); killed++; }
     }
     const end=o.clone().addScaledVector(d,wallD);
-    sparks(end,killed>0?4:2,0xff2b17);
+    sparks(end,killed>0?4:2,0x5b9bff);
   }
   if(!freeBeam){ player.hp-=LASER_COST; player.lastHurt=gameT; }
   SFX.ltick();
@@ -2579,7 +2754,11 @@ function updateHUD(){
       const show=(i<3&&!infinityMode)||(i===3&&hasLaser())||(i===4&&mod==='ak'&&!infinityMode);
       el.style.display=show?'flex':'none';
       el.classList.toggle('sel',curW===i);
-    }
+      // «Буря»: кончики ракет в стволах = боезапас
+  if(gunModels[2]&&gunModels[2].userData.tips){
+    const tp=gunModels[2].userData.tips;
+    for(let i=0;i<tp.length;i++) tp[i].visible=(i<gunState[2].ammo);
+   }
   }
 }
 
