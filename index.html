@@ -2103,7 +2103,7 @@ function registerSunHit(){
   if(gameT-lastSunHitT>4) sunShotStreak=0;
   lastSunHitT=gameT;
   sunShotStreak++;
-  if(sunShotStreak>=32){
+  if(sunShotStreak>=12){
     sunEggDone=true;
     wallsAscend={t:0};
     SFX.rumble(1.8);
