@@ -145,6 +145,19 @@
   #overlay .plat-btn i{font-style:normal;font-size:9.5px;color:var(--red);letter-spacing:.24em}
   #overlay .plat-btn:hover{background:var(--ink);color:var(--paper);transform:translateY(-2px)}
   #overlay .menu-link{margin-top:18px;font-size:11px;letter-spacing:.22em;opacity:.5;text-transform:uppercase}
+  #title-art{
+    position:fixed;inset:0;z-index:1;pointer-events:none;
+    display:flex;flex-direction:column;justify-content:flex-start;
+    align-items:center;padding-top:7vh}
+  #title-art .t-word{
+    font-family:'Unbounded';font-weight:900;font-size:clamp(40px,9vw,110px);
+    letter-spacing:.04em;color:#14120f;line-height:.95;text-align:center}
+  #title-art .t-word em{font-style:normal;color:#e02414}
+  #title-art .t-sub{
+    margin-top:1.2vh;font-family:'IBM Plex Mono',monospace;font-size:clamp(10px,1.4vw,14px);
+    letter-spacing:.34em;text-transform:uppercase;color:rgba(20,18,15,.62)}
+  #title-art .t-rule{
+    margin-top:2.2vh;width:64px;height:2px;background:#e02414}
   .net-box{margin-top:20px;text-align:left}
   .net-name{width:100%;max-width:280px;font-family:'IBM Plex Mono',monospace;font-size:13px;
     background:rgba(255,255,255,.55);border:1px solid rgba(20,18,15,.35);color:var(--ink);
@@ -188,6 +201,12 @@
 <div id="crosshair"><span class="c1"></span><span class="c2"></span><span class="c3"></span><span class="c4"></span></div>
 <div id="vignette"></div>
 <div id="damage"></div>
+
+<div id="title-art">
+  <div class="t-word">БЕССОН<em>НИЦА</em></div>
+  <div class="t-rule"></div>
+  <div class="t-sub">из лабиринта не выходят</div>
+</div>
 
 <div id="hud">
   <div id="hud-tl">
@@ -255,7 +274,8 @@
 <script>
 'use strict';
 /* ============================================================
-   БЕССОННИЦА — часть 1 из 2 (финал: лица стен, шум, пасхалки)
+   БЕССОННИЦА — часть 1 из 2
+   + пыль сна + живые стены + шлейф небесных гигантов
    ============================================================ */
 
 // ---------- константы ----------
@@ -278,6 +298,7 @@ const INF_ENEMIES = 24;
 const TOUCH_SENS = 0.0062;
 const MOONG_GRAV = 7, MOONG_JUMP = 9.5;
 const SAVE_KEY = 'insomnia_save_v2';
+const DUST_N = 220;         // пыль сна: количество частиц
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd = (a,b)=>a+Math.random()*(b-a);
@@ -600,7 +621,7 @@ playerLight.position.set(0, -0.1, 0);
 camera.add(playerLight);
 let playerLightBase = 0;
 
-/* ---------- пост-обработка: HDR-bloom + зерно сна (растёт с глубиной) + FXAA ---------- */
+/* ---------- пост-обработка ---------- */
 const isGL2 = renderer.capabilities.isWebGL2;
 const composer = isGL2
   ? new THREE.EffectComposer(renderer,
@@ -638,7 +659,7 @@ composer.setSize(innerWidth,innerHeight);
 updateFXAA();
 function glow(hex,mul){ const c=new THREE.Color(hex); c.multiplyScalar(mul); return c; }
 
-// чёрное солнце / красное затмение (пульс — в главном цикле)
+// чёрное солнце
 const SUNDIR = new THREE.Vector3(-0.32,0.42,-0.85).normalize();
 const sunGroup = new THREE.Group();
 const sunDisc = new THREE.Mesh(
@@ -660,8 +681,48 @@ sunGlowMesh.position.z = -2;
 sunGroup.add(sunDisc, sunHalo, sunGlowMesh);
 scene.add(sunGroup);
 
-// ---------- текстуры ----------
-function makeCheckerTex(){
+/* ---------- текстуры: живая бумага стен ----------
+   3 состояния по глубине: свежая (1-6) → потёртая (7-13) → трещины (14+).
+   Плюс шум яркости по тайлам, чтобы лабиринт не выглядел штампованным. */
+function makeWallTex(stage){
+  const c=document.createElement('canvas'); c.width=c.height=256;
+  const x=c.getContext('2d');
+  // базовый тон темнее с глубиной
+  const base=stage===0?'#e9e3d3':stage===1?'#e2dbca':'#d9d2c1';
+  x.fillStyle=base; x.fillRect(0,0,256,256);
+  // волокна бумаги
+  x.strokeStyle='rgba(22,19,14,0.16)'; x.lineWidth=2;
+  const fibers=stage===0?9:stage===1?14:18;
+  for(let i=0;i<fibers;i++){
+    const px=18+i*(220/fibers)+rnd(-4,4);
+    x.beginPath(); x.moveTo(px,rnd(10,40)); x.lineTo(px+rnd(-6,6),256-rnd(10,40)); x.stroke();
+  }
+  // потёртости: пятна (появляются со stage 1)
+  if(stage>=1){
+    for(let i=0;i<6+stage*4;i++){
+      const sx=rnd(10,246), sy=rnd(10,246), sr=rnd(8,28);
+      x.fillStyle='rgba(120,110,95,'+(0.05+stage*0.03)+')';
+      x.beginPath(); x.ellipse(sx,sy,sr,sr*rnd(0.5,1),rnd(0,3),0,7); x.fill();
+    }
+  }
+  // трещины (stage 2)
+  if(stage>=2){
+    x.strokeStyle='rgba(30,26,20,0.35)'; x.lineWidth=1.5;
+    for(let i=0;i<3;i++){
+      let cx=rnd(30,226), cy=rnd(20,120);
+      x.beginPath(); x.moveTo(cx,cy);
+      for(let j=0;j<5;j++){ cx+=rnd(-22,22); cy+=rnd(14,30); x.lineTo(cx,cy); }
+      x.stroke();
+    }
+  }
+  // рёбра блоков
+  x.strokeStyle='#16130e'; x.lineWidth=10;
+  x.strokeRect(0,0,256,256);
+  const t=new THREE.CanvasTexture(c);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  return t;
+}
+const checkerTex=(function(){
   const c=document.createElement('canvas'); c.width=c.height=128;
   const x=c.getContext('2d');
   x.fillStyle='#d9d2c0'; x.fillRect(0,0,128,128);
@@ -671,27 +732,32 @@ function makeCheckerTex(){
   const t=new THREE.CanvasTexture(c);
   t.wrapS=t.wrapT=THREE.RepeatWrapping; t.magFilter=THREE.NearestFilter;
   return t;
-}
-function makeWallTex(){
-  const c=document.createElement('canvas'); c.width=c.height=256;
-  const x=c.getContext('2d');
-  x.fillStyle='#e9e3d3'; x.fillRect(0,0,256,256);
-  x.strokeStyle='rgba(22,19,14,.16)'; x.lineWidth=2;
-  for(let i=0;i<9;i++){
-    const px=18+i*28+rnd(-4,4);
-    x.beginPath(); x.moveTo(px,rnd(10,40)); x.lineTo(px+rnd(-6,6),256-rnd(10,40)); x.stroke();
-  }
-  x.strokeStyle='#16130e'; x.lineWidth=10;
-  x.strokeRect(0,0,256,256);
-  const t=new THREE.CanvasTexture(c);
-  t.wrapS=t.wrapT=THREE.RepeatWrapping;
-  return t;
-}
-const checkerTex = makeCheckerTex(), wallTex = makeWallTex();
+})();
+// три стадии стен + вариация яркости инстансов
+const wallTexFresh=makeWallTex(0), wallTexWorn=makeWallTex(1), wallTexCracked=makeWallTex(2);
+let wallStage=0;
+const wallMat=new THREE.MeshLambertMaterial({map:wallTexFresh});
 const wallGeo = new THREE.BoxGeometry(CS,WALL_H,CS);
-const wallMat = new THREE.MeshLambertMaterial({map:wallTex});
 const floorMat = new THREE.MeshLambertMaterial({map:checkerTex});
-const SHARED_RES = new Set([wallGeo, wallMat, floorMat, checkerTex, wallTex]);
+const SHARED_RES = new Set([wallGeo, wallMat, floorMat, checkerTex,
+  wallTexFresh, wallTexWorn, wallTexCracked]);
+function wallTexForDepth(d){
+  return d<7?wallTexFresh : d<14?wallTexWorn : wallTexCracked;
+}
+// шум яркости тайлов: setColorAt на инстансах
+const _wallTint=new THREE.Color();
+function applyWallTint(mesh,seed){
+  if(!mesh.instanceColor){
+    mesh.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(mesh.count*3),3);
+  }
+  const R=mulberry32(seed||1337);
+  for(let i=0;i<mesh.count;i++){
+    const v=0.86+R()*0.24;
+    _wallTint.setRGB(v,v*(0.995+R()*0.01),v*(0.99+R()*0.012));
+    mesh.setColorAt(i,_wallTint);
+  }
+  mesh.instanceColor.needsUpdate=true;
+}
 
 // ---------- атмосфера ----------
 let NIGHT = 0, MOONP = 0;
@@ -711,7 +777,9 @@ function applyAtmosphere(d){
   hemiLight.groundColor.set(new THREE.Color(0x8f887a).lerp(new THREE.Color(0x10131d), NIGHT));
   sunLight.intensity = 0.5 - 0.44*NIGHT;
   sunLight.color.set(new THREE.Color(0xfff2dd).lerp(new THREE.Color(0xaebadd), NIGHT));
-  wallMat.color.setScalar(1 - 0.45*NIGHT);
+  // живая бумага: стадия текстуры по глубине
+  wallMat.map=wallTexForDepth(d);
+  wallMat.needsUpdate=true;
   sunHalo.material.opacity = 0.85*NIGHT;
   sunGlowMesh.material.opacity = 0.4*NIGHT;
   sunGroup.visible = d < 17;
@@ -719,7 +787,6 @@ function applyAtmosphere(d){
   gunHemi.intensity = 0.85 - 0.3*NIGHT;
   gunHemi.color.set(new THREE.Color(0xfff6e6).lerp(new THREE.Color(0x9fb4de), NIGHT));
   gunDir.intensity = 0.6 - 0.25*NIGHT;
-  // каждый уровень чуть темнее; с 6-го растёт шум экрана (на 15-м — очень сильный)
   const extraDark=clamp((d-7)/40,0,0.25);
   if(extraDark>0){
     sky.multiplyScalar(1-extraDark*0.55);
@@ -741,7 +808,8 @@ function applyInfinityAtmosphere(){
   hemiLight.groundColor.set(0xff9a5a);
   sunLight.intensity = 0.15;
   sunLight.color.set(0xffb37a);
-  wallMat.color.setScalar(1);
+  wallMat.map=wallTexWorn;
+  wallMat.needsUpdate=true;
   sunGroup.visible = false;
   playerLightBase = 0.5;
   gunHemi.intensity = 0.95;
@@ -749,8 +817,102 @@ function applyInfinityAtmosphere(){
   gunDir.intensity = 0.7;
   gunDir.color.set(0xffb37a);
   dreamPass.uniforms.uNight.value = 0.24;
-  dreamPass.uniforms.uNoise.value = 0.05; // рассвет: сон успокаивается
+  dreamPass.uniforms.uNoise.value = 0.05;
   document.body.classList.add('night');
+}
+
+/* ---------- ПЫЛЬ СНА ----------
+   Один Points-объект, шейдерная анимация дрейфа.
+   Ночью ярче и подсвечена фонарём; рядом с заряжающимся врагом (11+)
+   краснеет — телеграф в воздухе. */
+const dust = (function(){
+  const N=DUST_N;
+  const pos=new Float32Array(N*3);
+  const seed=new Float32Array(N);
+  for(let i=0;i<N;i++){
+    pos[i*3]=rnd(-14,14);
+    pos[i*3+1]=rnd(0.1,4.5);
+    pos[i*3+2]=rnd(-14,14);
+    seed[i]=rnd(0,100);
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('seed',new THREE.BufferAttribute(seed,1));
+  const mat=new THREE.ShaderMaterial({
+    transparent:true, depthWrite:false,
+    uniforms:{
+      uTime:{value:0},
+      uPlayer:{value:new THREE.Vector3()},
+      uColor:{value:new THREE.Color(0xcfc8b8)},
+      uOpacity:{value:0.16},
+      uSize:{value:2.0},
+      uCharge:{value:0},       // 0..1: близость заряжающегося врага
+      uChargePos:{value:new THREE.Vector3()},
+    },
+    vertexShader:[
+      'attribute float seed;',
+      'uniform float uTime;uniform vec3 uPlayer;uniform vec3 uChargePos;uniform float uCharge;',
+      'uniform float uSize;',
+      'varying float vFade;varying float vCharge;',
+      'void main(){',
+      '  vec3 p=position;',
+      '  float t=uTime*0.11+seed;',
+      '  p.x+=sin(t*1.7+seed)*1.6;',
+      '  p.y+=sin(t*1.1+seed*2.0)*0.7;',
+      '  p.z+=cos(t*1.3+seed*3.0)*1.6;',
+      '  vec3 world=p+uPlayer;',
+      '  // расстояние до заряжающегося врага (в шейдере — только затухание)',
+      '  float cd=distance(world,uChargePos);',
+      '  vCharge=uCharge*clamp(1.0-cd/9.0,0.0,1.0);',
+      '  vFade=clamp(1.0-length(position)/15.0,0.12,1.0);',
+      '  vec4 mv=modelViewMatrix*vec4(world,1.0);',
+      '  gl_PointSize=uSize*(180.0/-mv.z);',
+      '  gl_Position=projectionMatrix*mv;',
+      '}'
+    ].join('\n'),
+    fragmentShader:[
+      'uniform vec3 uColor;uniform float uOpacity;',
+      'varying float vFade;varying float vCharge;',
+      'void main(){',
+      '  vec2 d=gl_PointCoord-vec2(0.5);',
+      '  float a=smoothstep(0.5,0.05,length(d));',
+      '  vec3 col=mix(uColor,vec3(0.95,0.12,0.06),vCharge);',
+      '  float op=uOpacity*vFade*(1.0+vCharge*1.4);',
+      '  gl_FragColor=vec4(col,op*a);',
+      '}'
+    ].join('\n')
+  });
+  const pts=new THREE.Points(geo,mat);
+  pts.frustumCulled=false;
+  scene.add(pts);
+  return {pts,mat};
+})();
+function updateDust(dt){
+  const u=dust.mat.uniforms;
+  u.uTime.value+=dt;
+  u.uPlayer.value.copy(player.pos);
+  // плотность/яркость по времени суток
+  if(infinityMode){
+    u.uColor.value.set(0xffd9b0);
+    u.uOpacity.value=0.13;
+    u.uSize.value=2.2;
+    u.uCharge.value=0;
+  } else {
+    u.uOpacity.value=0.10+NIGHT*0.16;
+    u.uSize.value=1.8+NIGHT*0.8;
+    // красный телеграф: ближайший заряжающийся враг (глубина 11+)
+    let charge=0; const cp=u.uChargePos.value;
+    if(depth>=11&&!infinityMode){
+      let bestD=1e9;
+      for(const e of enemies){
+        if(e.state!=='charge') continue;
+        const d=e.center.distanceTo(player.pos);
+        if(d<bestD){ bestD=d; cp.copy(e.center); }
+      }
+      if(bestD<1e9) charge=clamp(1.3-bestD/12,0,1);
+    }
+    u.uCharge.value+= (charge-u.uCharge.value)*Math.min(1,dt*5);
+  }
 }
 
 // ---------- состояние ----------
@@ -769,12 +931,10 @@ let platform='pc';
 let mod=null;
 let mouseHeld=false;
 let lastMod='';
-// пасхалка: 32 револьверных выстрела подряд в чёрное солнце
 let sunShotStreak=0, lastSunHitT=-99, sunEggDone=false, wallsAscend=null, wallCellsRef=[];
-// редкий сон: все стены уходят под землю на 1,26 с (выпадает 1 разу из 3)
 let rareSinkArmed=false, rareSinkDone=false, rareSinkAt=1e9, globalSink=null;
-// лица стен: слёзы и улыбки
 let wallFace=null, wallFaceT=rnd(8,18);
+let titleGroup=null, titleT=0;
 const touchUI={lookId:null,moveId:null,moveX:0,moveY:0,
   fireHeld:false,jumpHeld:false,fireBlocked:false};
 
@@ -926,6 +1086,7 @@ const tapWord=()=>platform==='mobile'?'коснись':'щёлкни';
 
 // ---------- экраны ----------
 function showIntro(){
+  buildTitleScene();
   const touchable=('ontouchstart' in window)||navigator.maxTouchPoints>0;
   const sv=loadSave();
   overlayShow(`
@@ -1079,8 +1240,9 @@ function resumeGame(){
   else startPlaying();
 }
 function startNewRun(){
+  dropTitleScene();
   score=0; kills=0; deaths=0; echo=0; depth=1; infinityMode=false;
-  rareSinkArmed=Math.random()<0.34; // каждый третий сон — «провал» стен
+  rareSinkArmed=Math.random()<0.34;
   rareSinkDone=false; rareSinkAt=gameT+rnd(45,170);
   sunEggDone=false; sunShotStreak=0; wallsAscend=null; globalSink=null;
   buildLevel(1); resetPlayer();
@@ -1109,6 +1271,7 @@ function applyPlatform(){
 function choosePlatform(p){
   platform=p;
   initAudio();
+  dropTitleScene();
   applyPlatform();
   const sv=loadSave();
   if(sv){ showContinue(sv); }
@@ -1177,6 +1340,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
     state='menu';
     laserOff(); moonSound(false);
     enemies.forEach(en=>chargeSound(false,en));
+    buildTitleScene();
     showIntro();
     return;
   }
@@ -1204,6 +1368,62 @@ document.getElementById('overlay').addEventListener('click',e=>{
   }
 });
 showIntro();
+
+// показ логотипа только на титуле
+setInterval(()=>{
+  const ta=document.getElementById('title-art');
+  if(ta) ta.style.display=(state==='menu')?'flex':'none';
+},200);
+
+/* ---------- титульная сцена: живой постер ---------- */
+function buildTitleScene(){
+  if(titleGroup) return;
+  titleGroup=new THREE.Group(); scene.add(titleGroup);
+  levelGroup=titleGroup;
+  scene.background=new THREE.Color(0xded7c6);
+  scene.fog.color.set(0xded7c6);
+  scene.fog.near=30; scene.fog.far=110;
+  const N=9;
+  const g=[];
+  for(let z=0;z<N;z++){ g.push(new Array(N).fill(1)); }
+  for(let i=1;i<N-1;i+=2){
+    for(let j=1;j<N-2;j++){ g[i][j]=0; g[j][i]=0; }
+  }
+  maze={grid:g,W:N,H:N};
+  const cells=[];
+  for(let z=0;z<N;z++)for(let x=0;x<N;x++)
+    if(g[z][x]===1) cells.push([x,z]);
+  wallMesh=new THREE.InstancedMesh(wallGeo,wallMat,cells.length);
+  wallMesh.frustumCulled=false;
+  const m=new THREE.Matrix4();
+  cells.forEach(([x,z],i)=>{
+    m.makeTranslation((x+0.5)*CS,WALL_H/2,(z+0.5)*CS+N*CS*0.3);
+    wallMesh.setMatrixAt(i,m);
+  });
+  applyWallTint(wallMesh,999);
+  titleGroup.add(wallMesh);
+  const fw=N*CS, fh=N*CS;
+  const floor=new THREE.Mesh(new THREE.PlaneGeometry(fw+180,fh+180), floorMat.clone());
+  floor.material.map=checkerTex.clone();
+  floor.material.map.needsUpdate=true;
+  floor.material.map.repeat.set((fw+180)/2,(fh+180)/2);
+  floor.rotation.x=-Math.PI/2;
+  floor.position.set(fw/2,0,fh/2+N*CS*0.3);
+  titleGroup.add(floor);
+  const beacon=new THREE.Mesh(
+    new THREE.CylinderGeometry(0.9,0.9,90,20,1,true),
+    new THREE.MeshBasicMaterial({color:glow(0xffffff,5),transparent:true,opacity:0.25,
+      depthWrite:false,fog:false,side:THREE.DoubleSide}));
+  beacon.position.set(fw/2,45,fh/2+N*CS*0.3);
+  beacon.renderOrder=-1;
+  titleGroup.add(beacon);
+  titleGroup.userData={beacon};
+}
+function dropTitleScene(){
+  if(!titleGroup) return;
+  scene.remove(titleGroup);
+  titleGroup=null; levelGroup=null; maze=null; wallMesh=null;
+}
 
 // ---------- лабиринт: сеяная генерация ----------
 function mulberry32(a){
@@ -1250,8 +1470,6 @@ function isSolid(gx,gz){
   if(!maze||gx<0||gz<0||gx>=maze.W||gz>=maze.H) return true;
   return maze.grid[gz][gx]===1;
 }
-/* коллизия: above=true — игрок над высотой стен (мод «лунная гравитация»):
-   внутренние клетки проходимы, границы карты остаются стеной (не упасть в пустоту) */
 function collide(x,z,r,above){
   const gx0=Math.floor((x-r)/CS), gx1=Math.floor((x+r)/CS);
   const gz0=Math.floor((z-r)/CS), gz1=Math.floor((z+r)/CS);
@@ -1310,12 +1528,109 @@ const enemies=[], rockets=[], pickups=[], particles=[];
 const particleGroup=new THREE.Group(); scene.add(particleGroup);
 const eGroup=new THREE.Group(); scene.add(eGroup);
 
+/* ---------- ШЛЕЙФ НЕБЕСНЫХ ГИГАНТОВ ----------
+   Каждая wireframe-фигура в небе роняет за собой тающее поле точек.
+   Красные «охотники» — красный след, бледные призраки — холодный. */
+const skyTrails=[];
+function makeSkyTrail(colorHex,count){
+  const N=count||90;
+  const pos=new Float32Array(N*3);
+  const life=new Float32Array(N);
+  for(let i=0;i<N;i++){ life[i]=0; pos[i*3+1]=-999; }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('life',new THREE.BufferAttribute(life,1));
+  const mat=new THREE.ShaderMaterial({
+    transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,
+    uniforms:{
+      uColor:{value:new THREE.Color(colorHex)},
+      uSize:{value:3.2},
+      uMaxLife:{value:7.0},
+    },
+    vertexShader:[
+      'attribute float life;',
+      'uniform float uSize;uniform float uMaxLife;',
+      'varying float vA;',
+      'void main(){',
+      '  vA=clamp(life/uMaxLife,0.0,1.0);',
+      '  vec4 mv=modelViewMatrix*vec4(position,1.0);',
+      '  gl_PointSize=uSize*vA*(300.0/-mv.z);',
+      '  gl_Position=projectionMatrix*mv;',
+      '}'
+    ].join('\n'),
+    fragmentShader:[
+      'uniform vec3 uColor;',
+      'varying float vA;',
+      'void main(){',
+      '  vec2 d=gl_PointCoord-vec2(0.5);',
+      '  float a=smoothstep(0.5,0.05,length(d));',
+      '  gl_FragColor=vec4(uColor,a*vA*0.7);',
+      '}'
+    ].join('\n')
+  });
+  const pts=new THREE.Points(geo,mat);
+  pts.frustumCulled=false;
+  scene.add(pts);
+  const trail={pts,geo,mat,head:0,N,timer:0,rate:0.14};
+  skyTrails.push(trail);
+  return trail;
+}
+function skyTrailDrop(trail,x,y,z){
+  const pos=trail.geo.attributes.position.array;
+  const life=trail.geo.attributes.life.array;
+  const i=trail.head;
+  pos[i*3]=x+rnd(-1.4,1.4);
+  pos[i*3+1]=y+rnd(-1.4,1.4);
+  pos[i*3+2]=z+rnd(-1.4,1.4);
+  life[i]=trail.mat.uniforms.uMaxLife.value;
+  trail.head=(trail.head+1)%trail.N;
+  trail.geo.attributes.position.needsUpdate=true;
+  trail.geo.attributes.life.needsUpdate=true;
+}
+function updateSkyTrails(dt){
+  if(!levelGroup) { for(const t of skyTrails) t.pts.visible=false; return; }
+  const skys=levelGroup.children.filter(o=>o.userData.sky);
+  for(const t of skyTrails){
+    const idx=skyTrails.indexOf(t);
+    const owner=skys[idx];
+    if(!owner){ t.pts.visible=false; continue; }
+    t.pts.visible=true;
+    //.rate: точка раз в 0.14 с вдоль траектории
+    t.timer-=dt;
+    if(t.timer<=0){
+      t.timer=t.rate;
+      skyTrailDrop(t,owner.position.x,owner.position.y,owner.position.z);
+    }
+    // затухание
+    const life=t.geo.attributes.life.array;
+    for(let i=0;i<t.N;i++){
+      if(life[i]>0){
+        life[i]=Math.max(0,life[i]-dt);
+        if(life[i]===0){
+          const pos=t.geo.attributes.position.array;
+          pos[i*3+1]=-999;
+        }
+      }
+    }
+    t.geo.attributes.life.needsUpdate=true;
+    t.geo.attributes.position.needsUpdate=true;
+  }
+}
+function disposeSkyTrails(){
+  for(const t of skyTrails){
+    scene.remove(t.pts);
+    t.geo.dispose(); t.mat.dispose();
+  }
+  skyTrails.length=0;
+}
+
 function disposeLevel(){
   moonSound(false); laserOff();
   moonState=null; platforms=[]; dawnRing=null; dawnGlow=null;
   wallsAscend=null; globalSink=null;
   if(wallFace){ scene.remove(wallFace.group); wallFace=null; }
-  if(!levelGroup) return;
+  disposeSkyTrails();
+  if(!levelGroup||levelGroup===titleGroup) { levelGroup=null; return; }
   levelGroup.traverse(o=>{
     if(o.isMesh||o.isPoints){
       if(o.geometry && !SHARED_RES.has(o.geometry)) o.geometry.dispose();
@@ -1351,6 +1666,7 @@ function buildSkyDecor(fw,fh){
   const skyGeos=[new THREE.IcosahedronGeometry(1,1),new THREE.TorusGeometry(1,0.3,8,26),
     new THREE.OctahedronGeometry(1,0),new THREE.TorusKnotGeometry(1,0.25,60,10)];
   const ghost=new THREE.Color(0x17140f).lerp(new THREE.Color(0xc7d0e8),NIGHT);
+  let built=0;
   for(let i=0;i<9;i++){
     const g=skyGeos[rndi(0,skyGeos.length-1)];
     const mat=new THREE.MeshBasicMaterial({color:i<2?RED:ghost.clone(),
@@ -1363,22 +1679,9 @@ function buildSkyDecor(fw,fh){
     mesh.userData={spin:rnd(0.05,0.25)*(Math.random()<0.5?-1:1)};
     mesh.userData.sky=true;
     levelGroup.add(mesh);
-  }
-  if(NIGHT>0.03){
-    const cnt=Math.floor(160+NIGHT*220);
-    const pos=new Float32Array(cnt*3);
-    for(let i=0;i<cnt;i++){
-      const th=rnd(0,Math.PI*2), ph=rnd(0.08,1.35);
-      pos[i*3]=Math.cos(th)*Math.cos(ph)*260;
-      pos[i*3+1]=Math.sin(ph)*260;
-      pos[i*3+2]=Math.sin(th)*Math.cos(ph)*260;
-    }
-    const g=new THREE.BufferGeometry();
-    g.setAttribute('position',new THREE.BufferAttribute(pos,3));
-    starfield=new THREE.Points(g,new THREE.PointsMaterial({color:glow(0xdfe6ff,1.3),
-      size:1.6,sizeAttenuation:false,transparent:true,opacity:0.85*NIGHT,fog:false}));
-    starfield.position.set(fw/2,0,fh/2);
-    levelGroup.add(starfield);
+    // шлейф: охотники — красный, призраки — бледно-голубой
+    makeSkyTrail(i<2?0xe02414:0x8b9cc4, i<2?110:70);
+    built++;
   }
 }
 function buildMoon(){
@@ -1462,6 +1765,8 @@ function buildLevel(d){
     m.makeTranslation((x+0.5)*CS,WALL_H/2,(z+0.5)*CS);
     wallMesh.setMatrixAt(i,m);
   });
+  // живая бумага: уникальный шум яркости на уровень
+  applyWallTint(wallMesh, NET.active?NET.runSeed+d*7919:(Math.random()*1e9)|0);
   levelGroup.add(wallMesh);
 
   const distMap=Array.from({length:maze.H},()=>new Array(maze.W).fill(-1));
@@ -1593,6 +1898,7 @@ function buildInfinityLevel(){
     size:1.4,sizeAttenuation:false,transparent:true,opacity:0.3,fog:false}));
   levelGroup.add(starfield);
 
+  // гиганты рассвета — тоже со шлейфами
   const skyGeos=[new THREE.IcosahedronGeometry(1,1),new THREE.TorusGeometry(1,0.3,8,26),
     new THREE.OctahedronGeometry(1,0),new THREE.TorusKnotGeometry(1,0.25,60,10)];
   for(let i=0;i<10;i++){
@@ -1606,6 +1912,7 @@ function buildInfinityLevel(){
     mesh.userData={spin:rnd(0.05,0.2)*(Math.random()<0.5?-1:1)};
     mesh.userData.sky=true;
     levelGroup.add(mesh);
+    makeSkyTrail(i<3?0xe02414:0x9db2d8, i<3?100:60);
   }
 
   let a=rnd(0,6.28), rad=16, x=0, z=0, y=3;
@@ -1667,35 +1974,26 @@ function resetPlayer(){
   updateHUD();
 }
 
-/* ============================================================
-   ЛИЦА СТЕН: слёзы и улыбки. Канвас-текстуры, спавн у случайной
-   стены в поле зрения; слёзы текут (uv-скролл), улыбка — шире.
-   ============================================================ */
+/* ---------- ЛИЦА СТЕН ---------- */
 let tearTex=null, smileTex=null;
 function makeFaceTex(kind){
   const c=document.createElement('canvas'); c.width=c.height=128;
   const x=c.getContext('2d');
-  // тёмные глаза — сквозь пятна на «бумажной» стене
   x.fillStyle='rgba(14,12,9,0.85)';
   x.beginPath(); x.ellipse(40,44,9,13,0,0,7); x.fill();
   x.beginPath(); x.ellipse(88,44,9,13,0,0,7); x.fill();
   if(kind==='tear'){
-    // две дорожки слёз
     x.strokeStyle='rgba(20,60,90,0.5)'; x.lineWidth=5;
     x.beginPath(); x.moveTo(40,58); x.quadraticCurveTo(38,90,42,122); x.stroke();
     x.beginPath(); x.moveTo(88,58); x.quadraticCurveTo(90,92,86,124); x.stroke();
-    // сами капли (светлые)
     x.fillStyle='rgba(110,170,220,0.65)';
     x.beginPath(); x.ellipse(40,74,4,7,0,0,7); x.fill();
     x.beginPath(); x.ellipse(88,92,4,7,0,0,7); x.fill();
-    // скорбный рот
     x.strokeStyle='rgba(14,12,9,0.85)'; x.lineWidth=6;
     x.beginPath(); x.arc(64,96,22,Math.PI*0.15,Math.PI*0.85); x.stroke();
   } else {
-    // улыбка
     x.strokeStyle='rgba(14,12,9,0.85)'; x.lineWidth=6;
     x.beginPath(); x.arc(64,72,26,Math.PI*0.15,Math.PI*0.85); x.stroke();
-    // чуть прищуренные глаза
     x.strokeStyle='rgba(14,12,9,0.5)'; x.lineWidth=4;
     x.beginPath(); x.moveTo(28,36); x.lineTo(52,40); x.stroke();
     x.beginPath(); x.moveTo(100,36); x.lineTo(76,40); x.stroke();
@@ -1705,12 +2003,11 @@ function makeFaceTex(kind){
   return t;
 }
 function trySpawnWallFace(dt){
-  if(infinityMode||!levelGroup||!maze) return;
+  if(infinityMode||!levelGroup||!maze||levelGroup===titleGroup) return;
   wallFaceT-=dt;
   if(wallFaceT>0) return;
-  wallFaceT=rnd(10,26); // иногда
+  wallFaceT=rnd(10,26);
   if(wallFace){ scene.remove(wallFace.group); wallFace=null; }
-  // ищем стену в поле зрения игрока
   for(let tries=0;tries<14;tries++){
     const gx=rndi(1,maze.W-2), gz=rndi(1,maze.H-2);
     if(maze.grid[gz][gx]!==1) continue;
@@ -1718,9 +2015,8 @@ function trySpawnWallFace(dt){
     const dx=px-player.pos.x, dz=pz-player.pos.z;
     const d=Math.hypot(dx,dz);
     if(d<6||d>34) continue;
-    // видима ли стена
     if(!LOS(player.pos.x,player.pos.z,px,pz)) continue;
-    const kind=Math.random()<0.72?'tear':'smile'; // слёзы чаще улыбок
+    const kind=Math.random()<0.72?'tear':'smile';
     if(!tearTex) tearTex=makeFaceTex('tear');
     if(!smileTex) smileTex=makeFaceTex('smile');
     const tex=(kind==='tear'?tearTex:smileTex).clone();
@@ -1729,17 +2025,14 @@ function trySpawnWallFace(dt){
     const plane=new THREE.Mesh(new THREE.PlaneGeometry(1.6,1.6),
       new THREE.MeshLambertMaterial({map:tex,transparent:true,depthWrite:false}));
     group.add(plane);
-    // к стене, лицом к игроку
-    const cy=Math.cos(player.yaw), sy=Math.sin(player.yaw);
-    const side=Math.abs(dx*cy-dz*sy)>Math.abs(dx*sy+dz*cy);
     const off=CS/2+0.06;
-    if(side) group.position.set(px+Math.sign(dx*cy-dz*sy)*0,2.4,pz+(dz>0?off:-off));
-    else group.position.set(px+(dx>0?off:-off),2.4,pz);
+    if(Math.abs(dx)>Math.abs(dz)) group.position.set(px+(dx>0?off:-off),2.4,pz);
+    else group.position.set(px,2.4,pz+(dz>0?off:-off));
     group.lookAt(player.pos.x,2.4,player.pos.z);
     group.userData={kind,tex,life:rnd(6,11)};
     scene.add(group);
     wallFace={group};
-    if(kind==='tear') burstWhisper(px,pz,false,0.14); // стена плачет — тихий шёпот
+    if(kind==='tear') burstWhisper(px,pz,false,0.14);
     return;
   }
 }
@@ -1752,11 +2045,11 @@ function updateWallFace(dt){
     if(w.userData.life<=-1){ scene.remove(w); wallFace=null; return; }
   }
   if(w.userData.kind==='tear'&&w.userData.tex){
-    w.userData.tex.offset.y-=dt*0.06; // слёзы текут вниз
+    w.userData.tex.offset.y-=dt*0.06;
   }
 }
 
-/* ---------- редкий сон: все стены уходят под землю на 1,26 с ---------- */
+/* ---------- редкий сон: стены уходят под землю на 1,26 с ---------- */
 function tryRareSink(dt){
   if(!rareSinkArmed||rareSinkDone||!maze||!wallMesh) return;
   if(gameT<rareSinkAt) return;
@@ -1782,11 +2075,6 @@ function updateGlobalSink(dt){
     if(gs.t>=upDur){ globalSink=null; y=0; }
   }
   const m4=new THREE.Matrix4();
-  for(const [x,z] of wallCellsRef){
-    m4.makeTranslation((x+0.5)*CS,WALL_H/2+y,(z+0.5)*CS);
-    const idx=wallCellsRef.indexOf([x,z]);
-  }
-  // проще: пересетить все инстансы по сетке
   let i=0;
   for(let z=0;z<maze.H;z++)for(let x=0;x<maze.W;x++){
     if(maze.grid[z][x]===1){
@@ -1796,7 +2084,6 @@ function updateGlobalSink(dt){
     }
   }
   wallMesh.instanceMatrix.needsUpdate=true;
-  // во время провала сетка коллизий пустая (внутри)
   if(gs.phase==='hold'){
     if(!gs.gridSaved){
       gs.gridSaved=maze.grid.map(r=>r.slice());
@@ -1810,10 +2097,9 @@ function updateGlobalSink(dt){
   }
 }
 
-/* ---------- пасхалка: 32 револьверных попадания в солнце ---------- */
+/* ---------- пасхалка: 32 попадания в солнце ---------- */
 function registerSunHit(){
   if(sunEggDone||depth>=17||infinityMode) return;
-  // серия сбрасывается, если между выстрелами прошло >4 с
   if(gameT-lastSunHitT>4) sunShotStreak=0;
   lastSunHitT=gameT;
   sunShotStreak++;
@@ -1831,7 +2117,7 @@ function registerSunHit(){
 function updateWallsAscend(dt){
   if(!wallsAscend||!wallMesh||!maze) return;
   wallsAscend.t+=dt;
-  const y=wallsAscend.t*2.2; // медленно поднимаются
+  const y=wallsAscend.t*2.2;
   const m4=new THREE.Matrix4();
   let i=0;
   for(let z=0;z<maze.H;z++)for(let x=0;x<maze.W;x++){
@@ -1842,11 +2128,9 @@ function updateWallsAscend(dt){
     }
   }
   wallMesh.instanceMatrix.needsUpdate=true;
-  // коллизии уже не нужны — пол открыт
   for(let z=1;z<maze.H-1;z++)for(let x=1;x<maze.W-1;x++) maze.grid[z][x]=0;
-  if(wallsAscend.t>26) wallsAscend.done=true; // растворились в тумане
+  if(wallsAscend.t>26) wallsAscend.done=true;
 }
-/* попадание револьвера в солнце: луч в направлении солнца */
 function checkSunHit(){
   if(curW!==0||sunEggDone||depth>=17) return;
   const o=camera.position.clone();
@@ -1854,9 +2138,8 @@ function checkSunHit(){
   const sunWorld=new THREE.Vector3().copy(camera.position).addScaledVector(SUNDIR,340);
   const toSun=new THREE.Vector3().subVectors(sunWorld,o).normalize();
   const dot=d.dot(toSun);
-  if(dot>0.996){ // прицельно в диск
+  if(dot>0.996){
     registerSunHit();
-    // визуальный отклик: краткая вспышка ореола
     sunHalo.material.opacity=1.2;
   } else if(dot<0.985){
     if(gameT-lastSunHitT>0.6) sunShotStreak=Math.max(0,sunShotStreak-2);
@@ -2563,7 +2846,7 @@ gunModels[0].visible=true;
 const GUN_BASE=new THREE.Vector3(0.42,-0.42,-0.82);
 gunRig.position.copy(GUN_BASE);
 
-/* ---------- отдельная сцена оружия (двухпроходный рендер) ---------- */
+/* ---------- отдельная сцена оружия ---------- */
 const gunScene=new THREE.Scene();
 const gunCamera=new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.01, 10);
 const gunHemi=new THREE.HemisphereLight(0xfff6e6, 0x40382e, 0.85);
@@ -2579,15 +2862,13 @@ const flashLight=new THREE.PointLight(0xffd9a0,0,16);
 flashLight.position.set(0.42,-0.3,-1.4); camera.add(flashLight);
 const boomLight=new THREE.PointLight(0xff7038,0,30); scene.add(boomLight);
 
-// «Гидра» светит синим
 const laserBeam=new THREE.Mesh(new THREE.CylinderGeometry(1,1,1,8),
   new THREE.MeshBasicMaterial({color:glow(0x2f7cff,3),transparent:true,opacity:0.8,fog:false,
     blending:THREE.AdditiveBlending,depthWrite:false}));
 laserBeam.visible=false;
 scene.add(laserBeam);
 
-// чёрный муар-дым, исходящий от солнца: 26 тёмных тетраэдров,
-// медленно ползущих от диска прочь и растворяющихся
+// чёрный муар-дым от солнца
 const sunSmoke=[];
 (function buildSunSmoke(){
   for(let i=0;i<26;i++){
@@ -2596,9 +2877,9 @@ const sunSmoke=[];
       new THREE.MeshBasicMaterial({color:0x0c0a08,transparent:true,opacity:0.55,fog:false,
         blending:THREE.NormalBlending,depthWrite:false}));
     m.userData={
-      a:rnd(0,Math.PI*2), // угол вокруг солнца
-      r:rnd(34,66),       // стартовый радиус
-      spd:rnd(1.2,3.4),   // скорость отлёта
+      a:rnd(0,Math.PI*2),
+      r:rnd(34,66),
+      spd:rnd(1.2,3.4),
       spin:new THREE.Vector3(rnd(-1,1),rnd(-1,1),rnd(-1,1))
     };
     m.renderOrder=5;
@@ -2665,7 +2946,6 @@ function tryFire(){
   flashMesh.scale.setScalar(rnd(0.8,1.5));
   flashLight.intensity=curW===1?3.6:2.6;
   setTimeout(()=>flashMesh.visible=false,55);
-  // пасхалка солнца: проверяем попадание в диск (до расчёта урона)
   if(curW===0) checkSunHit();
   if(NET.active&&NET.role==='guest'){
     if(curW===0) SFX.rev(); else if(curW===4) SFX.ak(); else SFX.shotgun();
@@ -2749,7 +3029,7 @@ function updateLaserBeam(){
   laserBeam.material.opacity=0.65+0.2*Math.sin(gameT*30);
 }
 
-// ---------- ракеты (улетают и в небо — потолка нет) ----------
+// ---------- ракеты ----------
 function spawnRocket(){
   const g=new THREE.Group();
   const body=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.075,0.44,10),
@@ -2797,7 +3077,6 @@ function updateRockets(dt){
     r.mesh.position.copy(r.pos);
     spawnParticle(r.pos.clone(),new THREE.Vector3(rnd(-0.3,0.3),rnd(0.3,0.8),rnd(-0.3,0.3)),
       rnd(0.4,0.7),0.14,0x8d8574,false,1.8);
-    // в небо — просто летит, взорвётся по дистанции; вбок — по стене/полу
     let hit=r.dist>130||r.pos.y<0.15;
     if(!hit&&r.pos.y<WALL_H) hit=collide(r.pos.x,r.pos.z,0.1);
     if(!hit) for(const e of enemies)
@@ -3091,7 +3370,7 @@ document.addEventListener('gesturestart',e=>e.preventDefault());
 
 <script>
 /* ============================================================
-   БЕССОННИЦА · СЕТЬ — транспорт + лобби + хост-авторитарный мир
+   БЕССОННИЦА · СЕТЬ
    ============================================================ */
 (function(){
 'use strict';
@@ -3386,6 +3665,7 @@ function netBegin(seed){
   NET.runSeed=seed; NET.active=true;
   platform=NET.ownPlat||'pc';
   initAudio();
+  dropTitleScene();
   applyPlatform();
   score=0; kills=0; deaths=0; echo=0; depth=1; infinityMode=false;
   rareSinkArmed=Math.random()<0.34;
@@ -3443,6 +3723,7 @@ function netGuestBuild(d){
     wallMesh.setMatrixAt(i,m4);
     NETW.wallIdx.set(x+'_'+z,i);
   });
+  applyWallTint(wallMesh,NET.runSeed+d*7919);
   levelGroup.add(wallMesh);
   const distMap=Array.from({length:maze.H},()=>new Array(maze.W).fill(-1));
   const q=[[1,1]]; distMap[1][1]=0; let far=[1,1],fd=0;
@@ -3507,6 +3788,7 @@ function netGuestInfinity(){
     mesh.userData={spin:rnd(0.05,0.2)*(Math.random()<0.5?-1:1)};
     mesh.userData.sky=true;
     levelGroup.add(mesh);
+    makeSkyTrail(i<3?0xe02414:0x9db2d8, i<3?100:60);
   }
   buildBeacon(0,0,0);
   NETW.platMeshes=[]; platforms.length=0;
@@ -4058,7 +4340,7 @@ window.netGuestMoonTick=netGuestMoonTick;
 
 <script>
 /* ============================================================
-   ГЛАВНЫЙ ЦИКЛ — пульс солнца, лица, провал, всплытие, верхушки
+   ГЛАВНЫЙ ЦИКЛ — всё живёт здесь
    ============================================================ */
 const _showTransition=showTransition;
 showTransition=function(nextD){
@@ -4106,7 +4388,7 @@ function loop(){
   sunGroup.position.copy(camera.position).addScaledVector(SUNDIR,340);
   sunGroup.quaternion.copy(camera.quaternion);
 
-  /* пульсирующий красный ореол чёрного солнца (день: слабое биение, ночь: полное) */
+  /* пульс солнца */
   if(sunGroup.visible){
     const pulse=0.5+0.5*Math.sin(gameT*1.7)+0.12*Math.sin(gameT*4.3);
     sunHalo.scale.setScalar(0.94+0.12*pulse);
@@ -4119,12 +4401,32 @@ function loop(){
   dreamPass.uniforms.uTime.value+=dt;
   updateBeaconHum(dt);
   updateWhispers(dt);
+  updateDust(dt);
+  updateSkyTrails(dt);
+
+  /* титульный экран: дрейф камеры */
+  if(state==='menu'&&titleGroup){
+    titleT+=dt;
+    const a=titleT*0.04;
+    const R=34, h=26+Math.sin(titleT*0.13)*2.5;
+    camera.position.set(Math.cos(a)*R, h, Math.sin(a)*R+30);
+    camera.rotation.set(-0.42, -a+Math.PI/2+Math.sin(titleT*0.09)*0.1, 0, 'YXZ');
+    sunGroup.position.copy(camera.position).addScaledVector(SUNDIR,340);
+    sunGroup.quaternion.copy(camera.quaternion);
+    const pulse2=0.5+0.5*Math.sin(gameT*1.7)+0.12*Math.sin(gameT*4.3);
+    sunHalo.scale.setScalar(0.94+0.12*pulse2);
+    sunGlowMesh.scale.setScalar(0.9+0.2*pulse2);
+    sunHalo.material.opacity=0.34+0.2*pulse2;
+    if(titleGroup.userData.beacon){
+      titleGroup.userData.beacon.material.opacity=0.2+Math.sin(gameT*2.2)*0.06;
+    }
+  }
 
   if(state==='playing'){
     gameT+=dt;
     if(NET.active&&NET.role==='host') netHostTick(dt);
 
-    // --- движение: над стенами — только верхний этаж (мод «луна») ---
+    // --- движение ---
     let f=0,s=0;
     if(keys['KeyW']||keys['ArrowUp'])f++;
     if(keys['KeyS']||keys['ArrowDown'])f--;
@@ -4148,10 +4450,9 @@ function loop(){
     moveMC(player.pos,player.vel.x*dt,player.vel.z*dt,PLAYER_R,aboveWalls);
     player.pos.y+=player.vel.y*dt;
 
-    // вертикаль: пол + верхушки стен + платформы рассвета
+    // вертикаль: пол + верхушки стен + платформы
     let floorY=0;
     if(!infinityMode&&player.pos.y>WALL_H-0.6&&maze){
-      // стоим на верхушках стен
       const gx=Math.floor(player.pos.x/CS), gz=Math.floor(player.pos.z/CS);
       if(gx>=0&&gz>=0&&gx<maze.W&&gz<maze.H&&maze.grid[gz][gx]===1)
         floorY=WALL_H;
@@ -4272,9 +4573,9 @@ function loop(){
     updateDyson(dt);
 
     // маяк
-    if(levelGroup){
+    if(levelGroup&&levelGroup.userData.beacon){
       const b=levelGroup.userData.beacon;
-      if(b){ b.material.opacity=0.18+Math.sin(gameT*2.2)*0.07; }
+      b.material.opacity=0.18+Math.sin(gameT*2.2)*0.07;
       const r=levelGroup.userData.ring;
       if(r){ r.scale.setScalar(1+Math.sin(gameT*2.2)*0.12); r.rotation.z+=dt*0.8; }
     }
@@ -4286,7 +4587,7 @@ function loop(){
       dawnGlow.material.opacity=0.2+0.07*Math.sin(gameT*0.5+1);
     }
 
-    // выход: гость не триггерит
+    // выход
     const reached = Math.hypot(player.pos.x-exitPos.x,player.pos.z-exitPos.z)<1.6
       && Math.abs(player.pos.y-exitPos.y)<2.5;
     if(reached && !(NET.active&&NET.role==='guest')){
