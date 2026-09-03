@@ -275,7 +275,7 @@
 'use strict';
 /* ============================================================
    БЕССОННИЦА — часть 1 из 2
-   + пыль сна + живые стены + шлейф небесных гигантов
+   пыль 2-3px · глитч гигантов (4→17) · втягивание частиц врагами
    ============================================================ */
 
 // ---------- константы ----------
@@ -298,7 +298,7 @@ const INF_ENEMIES = 24;
 const TOUCH_SENS = 0.0062;
 const MOONG_GRAV = 7, MOONG_JUMP = 9.5;
 const SAVE_KEY = 'insomnia_save_v2';
-const DUST_N = 220;         // пыль сна: количество частиц
+const DUST_N = 220;
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd = (a,b)=>a+Math.random()*(b-a);
@@ -681,23 +681,18 @@ sunGlowMesh.position.z = -2;
 sunGroup.add(sunDisc, sunHalo, sunGlowMesh);
 scene.add(sunGroup);
 
-/* ---------- текстуры: живая бумага стен ----------
-   3 состояния по глубине: свежая (1-6) → потёртая (7-13) → трещины (14+).
-   Плюс шум яркости по тайлам, чтобы лабиринт не выглядел штампованным. */
+// ---------- текстуры: живая бумага стен ----------
 function makeWallTex(stage){
   const c=document.createElement('canvas'); c.width=c.height=256;
   const x=c.getContext('2d');
-  // базовый тон темнее с глубиной
   const base=stage===0?'#e9e3d3':stage===1?'#e2dbca':'#d9d2c1';
   x.fillStyle=base; x.fillRect(0,0,256,256);
-  // волокна бумаги
   x.strokeStyle='rgba(22,19,14,0.16)'; x.lineWidth=2;
   const fibers=stage===0?9:stage===1?14:18;
   for(let i=0;i<fibers;i++){
     const px=18+i*(220/fibers)+rnd(-4,4);
     x.beginPath(); x.moveTo(px,rnd(10,40)); x.lineTo(px+rnd(-6,6),256-rnd(10,40)); x.stroke();
   }
-  // потёртости: пятна (появляются со stage 1)
   if(stage>=1){
     for(let i=0;i<6+stage*4;i++){
       const sx=rnd(10,246), sy=rnd(10,246), sr=rnd(8,28);
@@ -705,7 +700,6 @@ function makeWallTex(stage){
       x.beginPath(); x.ellipse(sx,sy,sr,sr*rnd(0.5,1),rnd(0,3),0,7); x.fill();
     }
   }
-  // трещины (stage 2)
   if(stage>=2){
     x.strokeStyle='rgba(30,26,20,0.35)'; x.lineWidth=1.5;
     for(let i=0;i<3;i++){
@@ -715,7 +709,6 @@ function makeWallTex(stage){
       x.stroke();
     }
   }
-  // рёбра блоков
   x.strokeStyle='#16130e'; x.lineWidth=10;
   x.strokeRect(0,0,256,256);
   const t=new THREE.CanvasTexture(c);
@@ -733,9 +726,7 @@ const checkerTex=(function(){
   t.wrapS=t.wrapT=THREE.RepeatWrapping; t.magFilter=THREE.NearestFilter;
   return t;
 })();
-// три стадии стен + вариация яркости инстансов
 const wallTexFresh=makeWallTex(0), wallTexWorn=makeWallTex(1), wallTexCracked=makeWallTex(2);
-let wallStage=0;
 const wallMat=new THREE.MeshLambertMaterial({map:wallTexFresh});
 const wallGeo = new THREE.BoxGeometry(CS,WALL_H,CS);
 const floorMat = new THREE.MeshLambertMaterial({map:checkerTex});
@@ -744,7 +735,6 @@ const SHARED_RES = new Set([wallGeo, wallMat, floorMat, checkerTex,
 function wallTexForDepth(d){
   return d<7?wallTexFresh : d<14?wallTexWorn : wallTexCracked;
 }
-// шум яркости тайлов: setColorAt на инстансах
 const _wallTint=new THREE.Color();
 function applyWallTint(mesh,seed){
   if(!mesh.instanceColor){
@@ -777,7 +767,6 @@ function applyAtmosphere(d){
   hemiLight.groundColor.set(new THREE.Color(0x8f887a).lerp(new THREE.Color(0x10131d), NIGHT));
   sunLight.intensity = 0.5 - 0.44*NIGHT;
   sunLight.color.set(new THREE.Color(0xfff2dd).lerp(new THREE.Color(0xaebadd), NIGHT));
-  // живая бумага: стадия текстуры по глубине
   wallMat.map=wallTexForDepth(d);
   wallMat.needsUpdate=true;
   sunHalo.material.opacity = 0.85*NIGHT;
@@ -821,10 +810,9 @@ function applyInfinityAtmosphere(){
   document.body.classList.add('night');
 }
 
-/* ---------- ПЫЛЬ СНА ----------
-   Один Points-объект, шейдерная анимация дрейфа.
-   Ночью ярче и подсвечена фонарём; рядом с заряжающимся врагом (11+)
-   краснеет — телеграф в воздухе. */
+/* ---------- ПЫЛЬ СНА: 2-3 пикселя ----------
+   Мелкая, как пыль на плёнке. Ночью чуть плотнее и краснеет
+   рядом с заряжающимся врагом. */
 const dust = (function(){
   const N=DUST_N;
   const pos=new Float32Array(N*3);
@@ -844,15 +832,13 @@ const dust = (function(){
       uTime:{value:0},
       uPlayer:{value:new THREE.Vector3()},
       uColor:{value:new THREE.Color(0xcfc8b8)},
-      uOpacity:{value:0.16},
-      uSize:{value:2.0},
-      uCharge:{value:0},       // 0..1: близость заряжающегося врага
+      uOpacity:{value:0.30},
+      uCharge:{value:0},
       uChargePos:{value:new THREE.Vector3()},
     },
     vertexShader:[
       'attribute float seed;',
       'uniform float uTime;uniform vec3 uPlayer;uniform vec3 uChargePos;uniform float uCharge;',
-      'uniform float uSize;',
       'varying float vFade;varying float vCharge;',
       'void main(){',
       '  vec3 p=position;',
@@ -861,12 +847,11 @@ const dust = (function(){
       '  p.y+=sin(t*1.1+seed*2.0)*0.7;',
       '  p.z+=cos(t*1.3+seed*3.0)*1.6;',
       '  vec3 world=p+uPlayer;',
-      '  // расстояние до заряжающегося врага (в шейдере — только затухание)',
       '  float cd=distance(world,uChargePos);',
       '  vCharge=uCharge*clamp(1.0-cd/9.0,0.0,1.0);',
       '  vFade=clamp(1.0-length(position)/15.0,0.12,1.0);',
       '  vec4 mv=modelViewMatrix*vec4(world,1.0);',
-      '  gl_PointSize=uSize*(180.0/-mv.z);',
+      '  gl_PointSize=2.6;   /* 2-3 px на экране, без перспективного роста */',
       '  gl_Position=projectionMatrix*mv;',
       '}'
     ].join('\n'),
@@ -875,9 +860,9 @@ const dust = (function(){
       'varying float vFade;varying float vCharge;',
       'void main(){',
       '  vec2 d=gl_PointCoord-vec2(0.5);',
-      '  float a=smoothstep(0.5,0.05,length(d));',
+      '  float a=smoothstep(0.5,0.15,length(d));',
       '  vec3 col=mix(uColor,vec3(0.95,0.12,0.06),vCharge);',
-      '  float op=uOpacity*vFade*(1.0+vCharge*1.4);',
+      '  float op=uOpacity*vFade*(1.0+vCharge*1.2);',
       '  gl_FragColor=vec4(col,op*a);',
       '}'
     ].join('\n')
@@ -891,16 +876,12 @@ function updateDust(dt){
   const u=dust.mat.uniforms;
   u.uTime.value+=dt;
   u.uPlayer.value.copy(player.pos);
-  // плотность/яркость по времени суток
   if(infinityMode){
     u.uColor.value.set(0xffd9b0);
-    u.uOpacity.value=0.13;
-    u.uSize.value=2.2;
+    u.uOpacity.value=0.22;
     u.uCharge.value=0;
   } else {
-    u.uOpacity.value=0.10+NIGHT*0.16;
-    u.uSize.value=1.8+NIGHT*0.8;
-    // красный телеграф: ближайший заряжающийся враг (глубина 11+)
+    u.uOpacity.value=0.20+NIGHT*0.22;
     let charge=0; const cp=u.uChargePos.value;
     if(depth>=11&&!infinityMode){
       let bestD=1e9;
@@ -1078,7 +1059,7 @@ function depthFlavor(d){
   if(d>=11) return CHAOS_QUOTES[rndi(0,CHAOS_QUOTES.length-1)];
   if(d===10) return '«десятая глубина. стены за спиной начали дышать.»';
   if(d===7) return '«наступила ночь. и шёпот. шёпот был всегда.»';
-  if(d>=4) return WHISPER_QUOTES[rndi(0,WHISPER_QUOTES.length-1)];
+  if(d>=4) return '«гиганты в небе дёргаются. им тоже снятся сны.»';
   if(d>=2) return NIGHT_QUOTES[rndi(0,NIGHT_QUOTES.length-1)];
   return QUOTES[rndi(0,QUOTES.length-1)];
 }
@@ -1369,7 +1350,6 @@ document.getElementById('overlay').addEventListener('click',e=>{
 });
 showIntro();
 
-// показ логотипа только на титуле
 setInterval(()=>{
   const ta=document.getElementById('title-art');
   if(ta) ta.style.display=(state==='menu')?'flex':'none';
@@ -1528,100 +1508,68 @@ const enemies=[], rockets=[], pickups=[], particles=[];
 const particleGroup=new THREE.Group(); scene.add(particleGroup);
 const eGroup=new THREE.Group(); scene.add(eGroup);
 
-/* ---------- ШЛЕЙФ НЕБЕСНЫХ ГИГАНТОВ ----------
-   Каждая wireframe-фигура в небе роняет за собой тающее поле точек.
-   Красные «охотники» — красный след, бледные призраки — холодный. */
-const skyTrails=[];
-function makeSkyTrail(colorHex,count){
-  const N=count||90;
-  const pos=new Float32Array(N*3);
-  const life=new Float32Array(N);
-  for(let i=0;i<N;i++){ life[i]=0; pos[i*3+1]=-999; }
-  const geo=new THREE.BufferGeometry();
-  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
-  geo.setAttribute('life',new THREE.BufferAttribute(life,1));
-  const mat=new THREE.ShaderMaterial({
-    transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,
-    uniforms:{
-      uColor:{value:new THREE.Color(colorHex)},
-      uSize:{value:3.2},
-      uMaxLife:{value:7.0},
-    },
-    vertexShader:[
-      'attribute float life;',
-      'uniform float uSize;uniform float uMaxLife;',
-      'varying float vA;',
-      'void main(){',
-      '  vA=clamp(life/uMaxLife,0.0,1.0);',
-      '  vec4 mv=modelViewMatrix*vec4(position,1.0);',
-      '  gl_PointSize=uSize*vA*(300.0/-mv.z);',
-      '  gl_Position=projectionMatrix*mv;',
-      '}'
-    ].join('\n'),
-    fragmentShader:[
-      'uniform vec3 uColor;',
-      'varying float vA;',
-      'void main(){',
-      '  vec2 d=gl_PointCoord-vec2(0.5);',
-      '  float a=smoothstep(0.5,0.05,length(d));',
-      '  gl_FragColor=vec4(uColor,a*vA*0.7);',
-      '}'
-    ].join('\n')
-  });
-  const pts=new THREE.Points(geo,mat);
-  pts.frustumCulled=false;
-  scene.add(pts);
-  const trail={pts,geo,mat,head:0,N,timer:0,rate:0.14};
-  skyTrails.push(trail);
-  return trail;
+/* ---------- ГЛИТЧ НЕБЕСНЫХ ГИГАНТОВ ----------
+   Шлейфы убраны. Вместо них — дёрганье и мерцание:
+   G = (глубина-3)/14: с 4-го уровня едва заметно, к 17-му — жёстко. */
+function skyGlitchAmount(){
+  if(infinityMode) return 0.18;            // рассвет: остаточный глюк
+  if(depth<4) return 0;                    // до 4-го — чистое небо
+  return clamp((depth-3)/14,0,1);
 }
-function skyTrailDrop(trail,x,y,z){
-  const pos=trail.geo.attributes.position.array;
-  const life=trail.geo.attributes.life.array;
-  const i=trail.head;
-  pos[i*3]=x+rnd(-1.4,1.4);
-  pos[i*3+1]=y+rnd(-1.4,1.4);
-  pos[i*3+2]=z+rnd(-1.4,1.4);
-  life[i]=trail.mat.uniforms.uMaxLife.value;
-  trail.head=(trail.head+1)%trail.N;
-  trail.geo.attributes.position.needsUpdate=true;
-  trail.geo.attributes.life.needsUpdate=true;
-}
-function updateSkyTrails(dt){
-  if(!levelGroup) { for(const t of skyTrails) t.pts.visible=false; return; }
-  const skys=levelGroup.children.filter(o=>o.userData.sky);
-  for(const t of skyTrails){
-    const idx=skyTrails.indexOf(t);
-    const owner=skys[idx];
-    if(!owner){ t.pts.visible=false; continue; }
-    t.pts.visible=true;
-    //.rate: точка раз в 0.14 с вдоль траектории
-    t.timer-=dt;
-    if(t.timer<=0){
-      t.timer=t.rate;
-      skyTrailDrop(t,owner.position.x,owner.position.y,owner.position.z);
+const _skyBase=new THREE.Vector3();
+function updateSkyGlitch(dt){
+  if(!levelGroup) return;
+  const G=skyGlitchAmount();
+  if(G<=0) return;
+  for(const o of levelGroup.children){
+    if(!o.userData.sky) continue;
+    const u=o.userData;
+    // база запоминается при первом кадре
+    if(!u.basePos){
+      u.basePos=o.position.clone();
+      u.glitchT=0;
+      u.jumpT=0;
+      u.visible=true;
+      o.material.opacity=u.baseOpacity!==undefined?u.baseOpacity:o.material.opacity;
     }
-    // затухание
-    const life=t.geo.attributes.life.array;
-    for(let i=0;i<t.N;i++){
-      if(life[i]>0){
-        life[i]=Math.max(0,life[i]-dt);
-        if(life[i]===0){
-          const pos=t.geo.attributes.position.array;
-          pos[i*3+1]=-999;
-        }
+    // рывок позиции: телепорт на короткое время
+    u.jumpT-=dt;
+    if(u.jumpT<=0){
+      u.jumpT=rnd(0.4,2.6)/(0.35+G);     // чаще с глубиной
+      if(Math.random()<G*0.9){
+        _skyBase.copy(u.basePos);
+        o.position.set(
+          _skyBase.x+rnd(-1,1)*G*9,
+          _skyBase.y+rnd(-1,1)*G*5,
+          _skyBase.z+rnd(-1,1)*G*9);
+        u.jumped=true;
+        u.jumpHold=rnd(0.05,0.22)*G+0.03; // на сколько зависнуть в сдвиге
       }
     }
-    t.geo.attributes.life.needsUpdate=true;
-    t.geo.attributes.position.needsUpdate=true;
+    if(u.jumped){
+      u.jumpHold-=dt;
+      if(u.jumpHold<=0){ o.position.copy(u.basePos); u.jumped=false; }
+    }
+    // мерцание: прозрачность скачет, изредка — «пропадание»
+    u.glitchT+=dt;
+    const flicker=0.5+0.5*Math.sin(u.glitchT*(3+G*9)+u.basePos.x);
+    const drop=Math.random()<G*0.004;      // редкое полное исчезновение кадра
+    o.visible=!drop;
+    const baseOp=u.baseOpacity!==undefined?u.baseOpacity:o.material.opacity;
+    if(u.baseOpacity===undefined) u.baseOpacity=baseOp;
+    o.material.opacity=baseOp*(0.45+0.55*flicker);
+    // дёрганье масштаба — рыхлость существа
+    o.scale.setScalar(u.baseScale+(Math.sin(u.glitchT*7.3)*0.06+Math.sin(u.glitchT*23.7)*0.03)*G);
   }
 }
-function disposeSkyTrails(){
-  for(const t of skyTrails){
-    scene.remove(t.pts);
-    t.geo.dispose(); t.mat.dispose();
+function resetSkyGlitch(){
+  if(!levelGroup) return;
+  for(const o of levelGroup.children){
+    if(!o.userData.sky||!o.userData.basePos) continue;
+    o.position.copy(o.userData.basePos);
+    o.visible=true;
+    if(o.userData.baseOpacity!==undefined) o.material.opacity=o.userData.baseOpacity;
   }
-  skyTrails.length=0;
 }
 
 function disposeLevel(){
@@ -1629,8 +1577,7 @@ function disposeLevel(){
   moonState=null; platforms=[]; dawnRing=null; dawnGlow=null;
   wallsAscend=null; globalSink=null;
   if(wallFace){ scene.remove(wallFace.group); wallFace=null; }
-  disposeSkyTrails();
-  if(!levelGroup||levelGroup===titleGroup) { levelGroup=null; return; }
+  if(!levelGroup||levelGroup===titleGroup){ levelGroup=null; return; }
   levelGroup.traverse(o=>{
     if(o.isMesh||o.isPoints){
       if(o.geometry && !SHARED_RES.has(o.geometry)) o.geometry.dispose();
@@ -1666,7 +1613,6 @@ function buildSkyDecor(fw,fh){
   const skyGeos=[new THREE.IcosahedronGeometry(1,1),new THREE.TorusGeometry(1,0.3,8,26),
     new THREE.OctahedronGeometry(1,0),new THREE.TorusKnotGeometry(1,0.25,60,10)];
   const ghost=new THREE.Color(0x17140f).lerp(new THREE.Color(0xc7d0e8),NIGHT);
-  let built=0;
   for(let i=0;i<9;i++){
     const g=skyGeos[rndi(0,skyGeos.length-1)];
     const mat=new THREE.MeshBasicMaterial({color:i<2?RED:ghost.clone(),
@@ -1675,13 +1621,11 @@ function buildSkyDecor(fw,fh){
     const mesh=new THREE.Mesh(g,mat);
     const a=rnd(0,Math.PI*2), rr=rnd(60,150);
     mesh.position.set(fw/2+Math.cos(a)*rr, rnd(30,95), fh/2+Math.sin(a)*rr);
-    mesh.scale.setScalar(rnd(9,26));
-    mesh.userData={spin:rnd(0.05,0.25)*(Math.random()<0.5?-1:1)};
+    const sc=rnd(9,26);
+    mesh.scale.setScalar(sc);
+    mesh.userData={spin:rnd(0.05,0.25)*(Math.random()<0.5?-1:1), baseScale:sc};
     mesh.userData.sky=true;
     levelGroup.add(mesh);
-    // шлейф: охотники — красный, призраки — бледно-голубой
-    makeSkyTrail(i<2?0xe02414:0x8b9cc4, i<2?110:70);
-    built++;
   }
 }
 function buildMoon(){
@@ -1765,7 +1709,6 @@ function buildLevel(d){
     m.makeTranslation((x+0.5)*CS,WALL_H/2,(z+0.5)*CS);
     wallMesh.setMatrixAt(i,m);
   });
-  // живая бумага: уникальный шум яркости на уровень
   applyWallTint(wallMesh, NET.active?NET.runSeed+d*7919:(Math.random()*1e9)|0);
   levelGroup.add(wallMesh);
 
@@ -1898,7 +1841,6 @@ function buildInfinityLevel(){
     size:1.4,sizeAttenuation:false,transparent:true,opacity:0.3,fog:false}));
   levelGroup.add(starfield);
 
-  // гиганты рассвета — тоже со шлейфами
   const skyGeos=[new THREE.IcosahedronGeometry(1,1),new THREE.TorusGeometry(1,0.3,8,26),
     new THREE.OctahedronGeometry(1,0),new THREE.TorusKnotGeometry(1,0.25,60,10)];
   for(let i=0;i<10;i++){
@@ -1908,11 +1850,11 @@ function buildInfinityLevel(){
     const mesh=new THREE.Mesh(sg,mat);
     const a=rnd(0,Math.PI*2), rr=rnd(90,180);
     mesh.position.set(Math.cos(a)*rr, rnd(35,110), Math.sin(a)*rr);
-    mesh.scale.setScalar(rnd(10,30));
-    mesh.userData={spin:rnd(0.05,0.2)*(Math.random()<0.5?-1:1)};
+    const sc=rnd(10,30);
+    mesh.scale.setScalar(sc);
+    mesh.userData={spin:rnd(0.05,0.2)*(Math.random()<0.5?-1:1), baseScale:sc};
     mesh.userData.sky=true;
     levelGroup.add(mesh);
-    makeSkyTrail(i<3?0xe02414:0x9db2d8, i<3?100:60);
   }
 
   let a=rnd(0,6.28), rad=16, x=0, z=0, y=3;
@@ -2103,7 +2045,7 @@ function registerSunHit(){
   if(gameT-lastSunHitT>4) sunShotStreak=0;
   lastSunHitT=gameT;
   sunShotStreak++;
-  if(sunShotStreak>=12){
+  if(sunShotStreak>=32){
     sunEggDone=true;
     wallsAscend={t:0};
     SFX.rumble(1.8);
@@ -2364,6 +2306,61 @@ function spawnEnemy(x,z,d){
   enemies.push(e);
   return e;
 }
+
+/* ---------- ВТЯГИВАНИЕ ЧАСТИЦ ВРАГОМ ----------
+   При входе в 'charge': ~26 тёмных искр по сфере R=2.2 вокруг
+   летят внутрь с разгоном и разгораясь в красный врага. */
+const suckers=[];
+function spawnSuck(e){
+  e.suck={t:0,dur:Math.max(0.4,e.type.charge*0.95)};
+  const n=26;
+  const start=[];
+  for(let i=0;i<n;i++){
+    const a=rnd(0,Math.PI*2), ph=Math.acos(rnd(-1,1)), R=2.0+rnd(0,0.7);
+    const off=new THREE.Vector3(
+      Math.sin(ph)*Math.cos(a)*R,
+      Math.cos(ph)*R*0.8,
+      Math.sin(ph)*Math.sin(a)*R);
+    start.push({off, delay:rnd(0,0.18)});
+  }
+  e.suck.parts=start;
+}
+function updateSuck(e,dt){
+  const s=e.suck;
+  if(!s) return;
+  s.t+=dt;
+  if(s.t>=s.dur){ e.suck=null; return; }
+  const k=s.t/s.dur;
+  const pull=easeInOut(k);
+  for(const p of s.parts){
+    const lt=clamp((s.t-p.delay)/s.dur,0,1);
+    if(lt<=0) continue;
+    // позиция: от старта к центру, с ускорением (ease-in)
+    const pp=Math.pow(lt,1.6);
+    const px=e.center.x+p.off.x*(1-pp);
+    const py=e.center.y+p.off.y*(1-pp);
+    const pz=e.center.z+p.off.z*(1-pp);
+    // яркость: тусклая вдали → цвет врага вплотную
+    const heat=pp;
+    const col=new THREE.Color(0x2a0805).lerp(new THREE.Color(0xff2b17),heat*heat);
+    const size=0.03+heat*0.05;
+    spawnParticle(new THREE.Vector3(px,py,pz),
+      new THREE.Vector3(0,0,0),
+      0.05, size, col.getHex(), false, 1);
+  }
+  // при почти-выстреле — плотный рой у самого тела
+  if(k>0.75){
+    for(let i=0;i<3;i++){
+      const a=rnd(0,Math.PI*2);
+      spawnParticle(new THREE.Vector3(
+        e.center.x+Math.cos(a)*0.5,
+        e.center.y+rnd(-0.4,0.4),
+        e.center.z+Math.sin(a)*0.5),
+        new THREE.Vector3(0,0,0), 0.05, 0.05, 0xff2b17, false, 1);
+    }
+  }
+}
+
 function orientCyl(mesh,a,b){
   const dir=new THREE.Vector3().subVectors(b,a);
   const len=dir.length(); if(len<0.01){mesh.visible=false;return;}
@@ -2453,16 +2450,18 @@ function updateEnemiesLocal(dt){
         e.aimP.copy(pChest);
         chargeSound(true,e,e.type.charge,e.type.cf0,e.type.cf1);
         burstWhisper(e.center.x,e.center.z,true,clamp(1-dist/28,0.08,0.22));
+        spawnSuck(e);
       }
     } else if(e.state==='charge'){
       e.aimP.lerp(pChest,1-Math.exp(-4.5*dt));
       e.chargeT-=dt;
-      if(!los){ e.loseT+=dt; if(e.loseT>0.25){ e.state='hunt'; e.atkT=0.7; chargeSound(false,e); e.aim.visible=false; } }
+      updateSuck(e,dt);
+      if(!los){ e.loseT+=dt; if(e.loseT>0.25){ e.state='hunt'; e.atkT=0.7; chargeSound(false,e); e.aim.visible=false; e.suck=null; } }
       else e.loseT=0;
       e.aim.visible=los;
       if(los) orientCyl(e.aim,e.center,e.aimP);
       if(e.chargeT<=0&&e.state==='charge'){
-        chargeSound(false,e); e.aim.visible=false;
+        chargeSound(false,e); e.aim.visible=false; e.suck=null;
         if(e.type.burst){
           e.state='burst'; e.burstLeft=e.type.burst; e.burstT=0.05;
         } else {
@@ -3788,7 +3787,6 @@ function netGuestInfinity(){
     mesh.userData={spin:rnd(0.05,0.2)*(Math.random()<0.5?-1:1)};
     mesh.userData.sky=true;
     levelGroup.add(mesh);
-    makeSkyTrail(i<3?0xe02414:0x9db2d8, i<3?100:60);
   }
   buildBeacon(0,0,0);
   NETW.platMeshes=[]; platforms.length=0;
@@ -3852,9 +3850,6 @@ function netHostFullWall(){
     }
     if(ch.length) broadcast({t:'ev_wall',ch});
   }
-}
-function netHostPlat(x,y,z,type,s){
-  NETW.platSpecs.push([+x.toFixed(2),+y.toFixed(2),+z.toFixed(2),type,+s.toFixed(2)]);
 }
 function netHostPlatReset(){ NETW.platSpecs=[]; }
 function netHostPlatFlush(){ if(NET.role==='host') broadcast({t:'ev_plats',p:NETW.platSpecs}); }
@@ -3984,6 +3979,7 @@ function netHostEnemiesTick(dt){
         e.state='charge'; e.chargeT=e.type.charge; e.loseT=0;
         e.aimP=tgtChest.clone();
         chargeSound(true,e,e.type.charge,e.type.cf0,e.type.cf1);
+        spawnSuck(e);
         for(const [id,p] of netPlayers){
           if(performance.now()-p.ts>3000) continue;
           if(Math.hypot(p.x-e.center.x,p.z-e.center.z)<28)
@@ -3993,12 +3989,13 @@ function netHostEnemiesTick(dt){
     } else if(e.state==='charge'){
       e.aimP.lerp(tgtChest,1-Math.exp(-4.5*dt));
       e.chargeT-=dt;
-      if(!los){ e.loseT+=dt; if(e.loseT>0.25){ e.state='hunt'; e.atkT=0.7; chargeSound(false,e); e.aim.visible=false; } }
+      updateSuck(e,dt);
+      if(!los){ e.loseT+=dt; if(e.loseT>0.25){ e.state='hunt'; e.atkT=0.7; chargeSound(false,e); e.aim.visible=false; e.suck=null; } }
       else e.loseT=0;
       e.aim.visible=los;
       if(los) orientCyl(e.aim,e.center,e.aimP);
       if(e.chargeT<=0&&e.state==='charge'){
-        chargeSound(false,e); e.aim.visible=false;
+        chargeSound(false,e); e.aim.visible=false; e.suck=null;
         if(e.type.burst){ e.state='burst'; e.burstLeft=e.type.burst; e.burstT=0.05; }
         else {
           e.state='hunt'; e.atkT=e.type.fireInt*rnd(0.85,1.3);
@@ -4325,7 +4322,6 @@ window.netGuestBuild=netGuestBuild;
 window.netGuestInfinity=netGuestInfinity;
 window.netHostTick=netHostTick;
 window.netHostFullWall=netHostFullWall;
-window.netHostPlat=netHostPlat;
 window.netHostPlatReset=netHostPlatReset;
 window.netHostPlatFlush=netHostPlatFlush;
 window.netHostKill=netHostKill;
@@ -4340,7 +4336,7 @@ window.netGuestMoonTick=netGuestMoonTick;
 
 <script>
 /* ============================================================
-   ГЛАВНЫЙ ЦИКЛ — всё живёт здесь
+   ГЛАВНЫЙ ЦИКЛ
    ============================================================ */
 const _showTransition=showTransition;
 showTransition=function(nextD){
@@ -4402,9 +4398,9 @@ function loop(){
   updateBeaconHum(dt);
   updateWhispers(dt);
   updateDust(dt);
-  updateSkyTrails(dt);
+  updateSkyGlitch(dt);
 
-  /* титульный экран: дрейф камеры */
+  /* титульный экран */
   if(state==='menu'&&titleGroup){
     titleT+=dt;
     const a=titleT*0.04;
@@ -4450,7 +4446,7 @@ function loop(){
     moveMC(player.pos,player.vel.x*dt,player.vel.z*dt,PLAYER_R,aboveWalls);
     player.pos.y+=player.vel.y*dt;
 
-    // вертикаль: пол + верхушки стен + платформы
+    // вертикаль
     let floorY=0;
     if(!infinityMode&&player.pos.y>WALL_H-0.6&&maze){
       const gx=Math.floor(player.pos.x/CS), gz=Math.floor(player.pos.z/CS);
@@ -4553,7 +4549,7 @@ function loop(){
       if(laserOn) updateLaserBeam();
     } else if(laserOn){ laserOff(); }
 
-    // рассвет: толпа не редеет
+    // рассвет: толпа
     if(infinityMode&&(!NET.active||NET.role==='host')){
       infSpawnT-=dt;
       if(enemies.length<INF_ENEMIES&&infSpawnT<=0){
